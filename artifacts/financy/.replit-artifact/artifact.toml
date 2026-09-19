@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Financy"
+description = "A private personal finance and investment management app foundation with responsive navigation, dashboard empty states, and expandable pages for money, investments, assets, goals, reports, and settings."
+version = "1.0.0"
+id = "artifacts/financy"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20951
+
+[services.development]
+run = "pnpm --filter @workspace/financy run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/financy", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/financy/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20951"
+BASE_PATH = "/"

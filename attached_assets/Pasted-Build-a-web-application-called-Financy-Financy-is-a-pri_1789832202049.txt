@@ -1,0 +1,314 @@
+Build a web application called "Financy".
+
+Financy is a private personal finance and investment management application for a single user initially, but the architecture must be ready for multiple users in the future.
+
+IMPORTANT:
+- I am not a programmer.
+- Build the application step by step.
+- Do not create the entire application at once.
+- For this first step, build ONLY the application foundation and UI shell.
+- Do not create fake financial data that looks like real user data.
+- Do not connect to external financial APIs yet.
+- Do not implement Supabase yet.
+- Do not implement authentication yet.
+- Do not implement investment calculations yet.
+- Do not delete or overwrite existing project files unnecessarily.
+
+TECH STACK:
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- Responsive design
+- Component-based architecture
+- Clean and maintainable folder structure
+- Prepare the project for Supabase integration later
+- Prepare the project to become a Progressive Web App (PWA)
+
+PRODUCT:
+Name: Financy
+
+Purpose:
+A personal money management and investment tracking application inspired by Money Pro, with a much stronger investment management system.
+
+The application will eventually support:
+- Accounts
+- Income
+- Expenses
+- Transfers
+- Investments
+- Portfolios
+- Investment Platforms
+- Investment Assets
+- General Assets
+- Receivables
+- Liabilities
+- Credit Cards
+- Loans
+- Installments
+- Budgets
+- Goals
+- Calendar
+- Reports
+- Search
+- Notifications
+- Backup and Restore
+- Security
+- AI Assistant
+
+DESIGN:
+Create a clean, modern, premium financial dashboard.
+
+The design should be:
+- Minimal
+- Professional
+- Calm
+- Modern
+- Mobile-first
+- Easy to understand
+- Suitable for daily personal finance use
+
+Use:
+- White/light background by default
+- Dark text
+- Green as the primary financial accent
+- Blue as a secondary accent
+- Soft cards
+- Rounded corners
+- Subtle shadows
+- Clean typography
+- Good spacing
+- Clear financial numbers
+
+Do not use excessive gradients.
+Do not make the interface look like a crypto trading platform.
+Do not use unnecessary animations.
+
+RESPONSIVE:
+The application must work very well on:
+- Desktop
+- Laptop
+- Tablet
+- iPhone
+
+On desktop:
+Use a left sidebar navigation.
+
+On mobile:
+Use a bottom navigation bar and a floating "+" quick action button.
+
+MAIN NAVIGATION:
+
+Desktop sidebar:
+
+Financy logo
+
+Dashboard
+Money
+Investments
+Assets
+Liabilities
+Budgets
+Goals
+Reports
+Calendar
+Search
+Notifications
+More
+
+Mobile bottom navigation:
+
+Home
+Money
+Investments
+Reports
+More
+
+Floating + button:
+Quick Add
+
+Quick Add options:
+- Expense
+- Income
+- Transfer
+- Investment
+
+DASHBOARD STRUCTURE:
+
+Create the Dashboard UI shell with empty states instead of fake financial numbers.
+
+Sections:
+
+1. Greeting
+"Good morning"
+User name placeholder
+
+2. Net Worth card
+
+3. Cash card
+
+4. Investments card
+
+5. Assets card
+
+6. Liabilities card
+
+7. Recent Transactions
+
+8. Monthly Cash Flow
+
+9. Budget Overview
+
+10. Goals Overview
+
+11. Investment Performance
+
+12. Upcoming Transactions
+
+Each section should have a clear empty state because there is no real data yet.
+
+PAGES:
+
+Create routes/pages for:
+
+/dashboard
+/money
+/accounts
+/transactions
+/investments
+/portfolios
+/platforms
+/assets
+/liabilities
+/budgets
+/goals
+/reports
+/calendar
+/search
+/notifications
+/settings
+
+For now, each page should have:
+- Page title
+- Short description
+- Clean empty state
+- Consistent navigation
+- Responsive layout
+
+MONEY PAGE:
+Create tabs or sections for:
+- Accounts
+- Income
+- Expenses
+- Transfers
+- Scheduled Transactions
+- Categories
+
+INVESTMENTS PAGE:
+Create sections for:
+- Portfolios
+- Platforms
+- Assets
+- Holdings
+- Buy
+- Sell
+- Dividends
+- Current Prices
+- Performance
+
+SETTINGS:
+Create a settings page structure with:
+- Profile
+- Appearance
+- Language
+- Currency
+- Categories
+- Investment Settings
+- Notifications
+- Backup & Restore
+- Security & Privacy
+- Data Management
+- About
+
+LANGUAGES:
+Prepare the application for:
+- English
+- Arabic
+
+Arabic must support RTL properly.
+
+Do not translate everything manually yet.
+Create a proper translation/i18n structure that can be expanded later.
+
+THEME:
+Prepare:
+- Light
+- Dark
+- System
+
+Default:
+System
+
+ARCHITECTURE:
+
+Create a clean structure similar to:
+
+src/
+  components/
+  pages/
+  layouts/
+  features/
+  hooks/
+  lib/
+  services/
+  types/
+  utils/
+  i18n/
+  styles/
+
+Separate reusable UI components from business logic.
+
+IMPORTANT FINANCIAL ARCHITECTURE:
+
+The application will eventually use Supabase PostgreSQL as the source of truth.
+
+Do not store calculated financial values as hardcoded values.
+
+Examples:
+- Account balance will eventually be calculated from transactions.
+- Portfolio value will eventually be calculated from holdings and current prices.
+- Net worth will eventually be calculated from assets and liabilities.
+- Budget actual spending will eventually be calculated from transactions.
+
+For now, only build the UI architecture.
+
+PWA:
+Prepare the application structure for installation on iPhone Home Screen later.
+
+ACCESSIBILITY:
+Use:
+- Clear labels
+- Good contrast
+- Keyboard accessibility
+- Proper buttons
+- Proper form labels
+- Responsive touch targets
+
+DO NOT:
+- Add financial APIs
+- Add stock market APIs
+- Add authentication
+- Add Supabase
+- Add payments
+- Add advertisements
+- Add unnecessary dependencies
+- Add fake financial calculations
+- Create a public marketing website
+
+This is a private personal finance application.
+
+FIRST OBJECTIVE:
+Create the project foundation, navigation, responsive layout, design system, routing, reusable components, and empty page structures.
+
+After completing this first step, stop and show me what was created.
+Do not continue to implement other modules automatically.

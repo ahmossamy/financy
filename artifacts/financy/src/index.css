@@ -1,0 +1,101 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --font-sans: var(--app-font-sans);
+  --font-display: var(--app-font-display);
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+}
+
+:root {
+  --background: 42 35% 97%;
+  --foreground: 160 22% 18%;
+  --border: 42 18% 88%;
+  --input: 42 18% 82%;
+  --ring: 151 42% 41%;
+  --card: 42 45% 99%;
+  --card-foreground: 160 22% 18%;
+  --primary: 151 42% 34%;
+  --primary-foreground: 42 45% 99%;
+  --secondary: 198 58% 93%;
+  --secondary-foreground: 198 46% 26%;
+  --muted: 42 22% 92%;
+  --muted-foreground: 161 10% 48%;
+  --accent: 198 58% 93%;
+  --accent-foreground: 198 46% 26%;
+  --destructive: 4 58% 48%;
+  --destructive-foreground: 42 45% 99%;
+  --sidebar: 157 24% 14%;
+  --sidebar-foreground: 42 35% 94%;
+  --sidebar-border: 157 18% 23%;
+  --sidebar-accent: 156 22% 21%;
+  --app-font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --app-font-display: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  --radius: 0.8rem;
+}
+
+.dark {
+  --background: 160 17% 10%;
+  --foreground: 42 28% 92%;
+  --border: 160 15% 23%;
+  --input: 160 15% 28%;
+  --ring: 151 48% 52%;
+  --card: 160 15% 14%;
+  --card-foreground: 42 28% 92%;
+  --primary: 151 48% 52%;
+  --primary-foreground: 160 24% 11%;
+  --secondary: 198 27% 22%;
+  --secondary-foreground: 198 46% 82%;
+  --muted: 160 14% 20%;
+  --muted-foreground: 42 12% 64%;
+  --accent: 198 27% 22%;
+  --accent-foreground: 198 46% 82%;
+  --destructive: 4 58% 58%;
+  --destructive-foreground: 160 24% 11%;
+  --sidebar: 160 20% 8%;
+  --sidebar-foreground: 42 28% 92%;
+  --sidebar-border: 160 15% 18%;
+  --sidebar-accent: 160 16% 15%;
+}
+
+@layer base {
+  * { @apply border-border; }
+  html { background: hsl(var(--background)); }
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    min-width: 320px;
+  }
+  button, a, input, select { -webkit-tap-highlight-color: transparent; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 3px solid hsl(var(--ring) / 0.35);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .font-display { font-family: var(--app-font-display); }
+  .card-shadow { box-shadow: 0 8px 24px hsl(160 22% 18% / 0.05), 0 1px 3px hsl(160 22% 18% / 0.04); }
+  .dark .card-shadow { box-shadow: 0 8px 24px hsl(0 0% 0% / 0.18), 0 1px 3px hsl(0 0% 0% / 0.12); }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+}
