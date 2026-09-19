@@ -50,6 +50,7 @@ import {
 import NotFound from '@/pages/not-found';
 import Login from '@/pages/login';
 import Accounts from '@/pages/accounts';
+import Transactions from '@/pages/transactions';
 
 const queryClient = new QueryClient();
 
@@ -685,7 +686,19 @@ function HubPage({ type }: { type: 'money' | 'investments' }) {
         {sections.map((section) => (
           <button
             key={section}
-            onClick={() => setActive(section)}
+            onClick={() => {
+              if (type === 'money' && section === 'Income') {
+                setLocation('/income');
+                return;
+              }
+
+              if (type === 'money' && section === 'Expenses') {
+                setLocation('/expenses');
+                return;
+              }
+
+              setActive(section);
+            }}
             className={cn(
               'whitespace-nowrap border-b-2 px-1 pb-3 text-xs font-bold transition-colors',
               active === section
@@ -1414,6 +1427,20 @@ function Router({
           <Route
             path="/accounts"
             component={Accounts}
+          />
+
+          <Route
+            path="/income"
+            component={() => (
+              <Transactions defaultType="income" />
+            )}
+          />
+
+          <Route
+            path="/expenses"
+            component={() => (
+              <Transactions defaultType="expense" />
+            )}
           />
 
           <Route
