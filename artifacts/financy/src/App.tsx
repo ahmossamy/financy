@@ -86,12 +86,10 @@ const mobileNav: NavItem[] = [
 ];
 
 const moneySections = [
-  'Accounts',
-  'Income',
-  'Expenses',
-  'Transfers',
-  'Scheduled Transactions',
-  'Categories',
+  'Payment Accounts',
+  'Credit Cards',
+  'Other Assets',
+  'Investments',
 ];
 
 const investmentSections = [
@@ -857,141 +855,168 @@ function Dashboard() {
 }
 
 function HubPage({ type }: { type: 'money' | 'investments' }) {
-  const sections =
-    type === 'money' ? moneySections : investmentSections;
-
-  const [active, setActive] = useState(sections[0]);
   const [, setLocation] = useLocation();
-  const icon = type === 'money' ? WalletCards : LineChart;
+  const sections = type === 'investments' ? investmentSections : moneySections;
+  const [active, setActive] = useState(sections[0]);
+
+  if (type === 'investments') {
+
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-primary">
+              Investment hub
+            </p>
+
+            <h2 className="mt-1 font-display text-[30px] font-extrabold tracking-[-0.055em]">
+              Invest with perspective.
+            </h2>
+
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              A considered home for your portfolios, holdings, and long-term view.
+            </p>
+          </div>
+
+          <button
+            onClick={() => setLocation('/portfolios')}
+            className="inline-flex h-10 w-fit items-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground"
+            data-testid="button-add-investments"
+          >
+            <Plus className="size-4" />
+            Add portfolio
+          </button>
+        </div>
+
+        <div className="flex gap-2 overflow-x-auto border-b border-border pb-px scrollbar-none">
+          {sections.map((section) => (
+            <button
+              key={section}
+              onClick={() => setActive(section)}
+              className={cn(
+                'whitespace-nowrap border-b-2 px-1 pb-3 text-xs font-bold transition-colors',
+                active === section
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {section}
+            </button>
+          ))}
+        </div>
+
+        <SectionCard title={active} icon={LineChart}>
+          <EmptyState
+            icon={LineChart}
+            title={`${active} is ready when you are`}
+            description="The investment module will be connected after Money is fully completed."
+            action={active === 'Portfolios' ? 'Add portfolio' : undefined}
+            onAction={() => setLocation('/portfolios')}
+          />
+        </SectionCard>
+      </div>
+    );
+  }
+
+  const moneyActions = [
+    {
+      label: 'Payment Accounts',
+      description: 'Bank accounts, cash, wallets, and prepaid balances.',
+      href: '/accounts',
+      icon: WalletCards,
+    },
+    {
+      label: 'Credit Cards',
+      description: 'Credit limits, outstanding balances, and due dates.',
+      href: '/credit-cards',
+      icon: CreditCard,
+    },
+    {
+      label: 'Other Assets',
+      description: 'Assets you own outside payment accounts and investments.',
+      href: '/assets',
+      icon: Landmark,
+    },
+    {
+      label: 'Investments',
+      description: 'Open the investment workspace for portfolios and holdings.',
+      href: '/investments',
+      icon: TrendingUp,
+    },
+  ] as const;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-primary">
-            {type === 'money' ? 'Money hub' : 'Investment hub'}
+            Money hub
           </p>
 
           <h2 className="mt-1 font-display text-[30px] font-extrabold tracking-[-0.055em]">
-            {type === 'money'
-              ? 'Make money feel simpler.'
-              : 'Invest with perspective.'}
+            Make money feel simpler.
           </h2>
 
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            {type === 'money'
-              ? 'Organize accounts, movement, and plans in one calm place.'
-              : 'A considered home for your portfolios, holdings, and long-term view.'}
+            Organize the places where your money lives before we build the transaction flow.
           </p>
         </div>
 
         <button
-          onClick={() =>
-            setLocation(
-              type === 'money' ? '/accounts' : '/portfolios',
-            )
-          }
+          onClick={() => setLocation('/accounts')}
           className="inline-flex h-10 w-fit items-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground"
-          data-testid={`button-add-${type}`}
+          data-testid="button-add-money"
         >
           <Plus className="size-4" />
-          {type === 'money' ? 'Add account' : 'Add portfolio'}
+          Add account
         </button>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto border-b border-border pb-px scrollbar-none">
-        {sections.map((section) => (
-          <button
-            key={section}
-            onClick={() => {
-              if (type === 'money' && section === 'Accounts') {
-                setLocation('/accounts');
-                return;
-              }
+      <div className="grid gap-5 sm:grid-cols-2">
+        {moneyActions.map((item) => {
+          const Icon = item.icon;
 
-              if (type === 'money' && section === 'Income') {
-                setLocation('/income');
-                return;
-              }
+          return (
+            <button
+              key={item.label}
+              type="button"
+              onClick={() => setLocation(item.href)}
+              className="group rounded-2xl border border-border bg-card p-6 text-left card-shadow transition-colors hover:border-primary/40 hover:bg-secondary/30"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <span className="grid size-11 place-items-center rounded-xl bg-secondary text-primary">
+                  <Icon className="size-5" />
+                </span>
 
-              if (type === 'money' && section === 'Expenses') {
-                setLocation('/expenses');
-                return;
-              }
+                <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-1" />
+              </div>
 
-              setActive(section);
-            }}
-            className={cn(
-              'whitespace-nowrap border-b-2 px-1 pb-3 text-xs font-bold transition-colors',
-              active === section
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-            data-testid={`tab-${section.toLowerCase().replaceAll(' ', '-')}`}
-          >
-            {section}
-          </button>
-        ))}
+              <h3 className="mt-5 font-display text-lg font-bold tracking-[-0.03em]">
+                {item.label}
+              </h3>
+
+              <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+                {item.description}
+              </p>
+            </button>
+          );
+        })}
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
-        <SectionCard title={active} icon={icon}>
-          <EmptyState
-            icon={icon}
-            title={`${active} is ready when you are`}
-            description={`There is nothing to show here yet. Add your first ${active
-              .toLowerCase()
-              .replace(
-                'scheduled transactions',
-                'scheduled transaction',
-              )} to begin.`}
-            action={
-              active === 'Accounts' || active === 'Portfolios'
-                ? `Add ${
-                    active === 'Accounts'
-                      ? 'account'
-                      : 'portfolio'
-                  }`
-                : undefined
-            }
-            onAction={() =>
-              setLocation(
-                type === 'money' ? '/accounts' : '/portfolios',
-              )
-            }
-          />
-        </SectionCard>
+      <div className="rounded-2xl border border-dashed border-primary/30 bg-[hsl(var(--primary)/.05)] p-5">
+        <div className="flex gap-3">
+          <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
 
-        <section className="rounded-2xl border border-border bg-[hsl(var(--secondary)/.45)] p-6">
-          <span className="grid size-10 place-items-center rounded-xl bg-background text-primary">
-            <Sparkles className="size-5" />
-          </span>
+          <div>
+            <p className="text-sm font-semibold">
+              Categories belong in Settings
+            </p>
 
-          <h3 className="mt-5 font-display text-lg font-bold tracking-[-0.03em]">
-            A thoughtful start
-          </h3>
-
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Financy stays quiet until you give it something real to work with. No made-up balances, no assumptions.
-          </p>
-
-          <div className="mt-6 space-y-3 text-xs font-semibold text-foreground">
-            <div className="flex items-center gap-2">
-              <span className="grid size-5 place-items-center rounded-full bg-primary text-primary-foreground">
-                <span className="text-[10px]">1</span>
-              </span>
-              Set up your first{' '}
-              {type === 'money' ? 'account' : 'portfolio'}
-            </div>
-
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <span className="grid size-5 place-items-center rounded-full border border-border bg-background">
-                <span className="text-[10px]">2</span>
-              </span>
-              Build your view over time
-            </div>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Income and expense categories will be managed from Settings instead of appearing as a Money Hub section.
+            </p>
           </div>
-        </section>
+        </div>
       </div>
     </div>
   );
@@ -1631,7 +1656,12 @@ function Router({
 
           <Route
             path="/accounts"
-            component={Accounts}
+            component={() => <Accounts initialSection="payment" />}
+          />
+
+          <Route
+            path="/credit-cards"
+            component={() => <Accounts initialSection="credit" />}
           />
 
           <Route
