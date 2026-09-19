@@ -918,108 +918,281 @@ function HubPage({ type }: { type: 'money' | 'investments' }) {
     );
   }
 
-  const moneyActions = [
+  const [moneyLoading, setMoneyLoading] = useState(true);
+  const [moneyAccounts, setMoneyAccounts] = useState<
+    Array<{
+      id: string;
+      name: string;
+      account_type: string;
+      currency_code: string;
+      opening_balance: number;
+      status: string;
+    }>
+  >([]);
+  const [moneyTransactions, setMoneyTransactions] = useState<
+    Array<{
+      id: string;
+      account_id: string | null;
+      type: 'income' | 'expense';
+      amount: number;
+      currency_code: string;
+      transaction_date: string;
+      description: string | null;
+    }>
+  >([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadMoneyHub() {
+      setMoneyLoading(true);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        if (mounted) setMoneyLoading(false);
+        return;
+      }
+
+      const [accountsResult, transactionsResult] = await Promise.all([
+        supabase
+          .from('accounts')
+          .select('id, name, account_type, currency_code, opening_balance, status')
+          .eq('user_id', user.id),
+        supabase
+          .from('transactions')
+          .select('id, account_id, type, amount, currency_code, transaction_date, description')
+          .eq('user_id', user.id)
+          .in('type', ['income', 'expense'])
+          .order('transaction_date', { ascending: false }),
+      ]);
+
+      if (!mounted) return;
+
+      setMoneyAccounts((accountsResult.data ?? []) as typeof moneyAccounts);
+      setMoneyTransactions((transactionsResult.data ?? []) as typeof moneyTransactions);
+      setMoneyLoading(false);
+    }
+
+    loadMoneyHub();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const paymentAccounts = moneyAccounts.filter(
+    (account) =>
+      account.status === 'active' &&
+      ['bank', 'cash', 'wallet', 'prepaid'].includes(account.account_type),
+  );
+  const creditCards = moneyAccounts.filter(
+    (account) => account.status === 'active' && account.account_type === 'credit_card',
+  );
+
+  const accountBalances = moneyAccounts.reduce<Record<string, number>>(
+    (result, account) => {
+      result[account.id] = Number(account.opening_balance || 0);
+      return result;
+    },
+    {},
+  );
+
+  for (const transaction of moneyTransactions) {
+    if (!transaction.account_id) continue;
+    if (!(transaction.account_id in accountBalances)) continue;
+    if (transaction.type === 'income') {
+      accountBalances[transaction.account_id] += Number(transaction.amount || 0);
+    } else {
+      accountBalances[transaction.account_id] -= Number(transaction.amount || 0);
+    }
+  }
+
+  const paymentTotal = paymentAccounts.reduce(
+    (sum, account) => sum + Number(accountBalances[account.id] ?? 0),
+    0,
+  );
+  const creditOutstanding = creditCards.reduce(
+    (sum, account) => sum + Math.max(0, -Number(accountBalances[account.id] ?? 0)),
+    0,
+  );
+
+  function hubMoney(value: number) {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'EGP',
+      maximumFractionDigits: 2,
+    }).format(value);
+  }
+
+  function hubDate(value: string) {
+    const date = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat('en-GB', {
+      day: '2-digit',
+      month: 'short',
+    }).format(date);
+  }
+
+  const moneyCards = [
     {
       label: 'Payment Accounts',
-      description: 'Bank accounts, cash, wallets, and prepaid balances.',
+      value: hubMoney(paymentTotal),
+      meta: `${paymentAccounts.length} account${paymentAccounts.length === 1 ? '' : 's'}`,
       href: '/accounts',
       icon: WalletCards,
+      tone: 'bg-secondary',
     },
     {
       label: 'Credit Cards',
-      description: 'Credit limits, outstanding balances, and due dates.',
-      href: '/credit-cards',
+      value: `- ${hubMoney(creditOutstanding)}`,
+      meta: `${creditCards.length} card${creditCards.length === 1 ? '' : 's'}`,
+      href: '/accounts',
       icon: CreditCard,
+      tone: 'bg-destructive/10',
     },
     {
       label: 'Other Assets',
-      description: 'Assets you own outside payment accounts and investments.',
+      value: 'Open workspace',
+      meta: 'Assets outside accounts',
       href: '/assets',
       icon: Landmark,
+      tone: 'bg-secondary',
     },
     {
       label: 'Investments',
-      description: 'Open the investment workspace for portfolios and holdings.',
+      value: 'Open workspace',
+      meta: 'Portfolios and holdings',
       href: '/investments',
       icon: TrendingUp,
+      tone: 'bg-secondary',
     },
   ] as const;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm font-semibold text-primary">
-            Money hub
-          </p>
-
-          <h2 className="mt-1 font-display text-[30px] font-extrabold tracking-[-0.055em]">
-            Make money feel simpler.
+          <p className="text-sm font-semibold text-primary">Money</p>
+          <h2 className="mt-1 font-display text-[34px] font-extrabold tracking-[-0.06em]">
+            Money Hub
           </h2>
-
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Organize the places where your money lives before we build the transaction flow.
+            Your complete financial picture in one place.
           </p>
         </div>
 
         <button
           onClick={() => setLocation('/accounts')}
           className="inline-flex h-10 w-fit items-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground"
-          data-testid="button-add-money"
         >
           <Plus className="size-4" />
-          Add account
+          Add Account
         </button>
       </div>
 
-      <div className="grid gap-5 sm:grid-cols-2">
-        {moneyActions.map((item) => {
-          const Icon = item.icon;
+      <section className="rounded-3xl bg-primary p-6 text-primary-foreground shadow-sm">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold opacity-75">Payment Accounts</p>
+            <p className="mt-2 font-display text-3xl font-extrabold tracking-[-0.05em]">
+              {moneyLoading ? 'Loading...' : hubMoney(paymentTotal)}
+            </p>
+            <p className="mt-1 text-xs opacity-75">
+              {paymentAccounts.length} active account{paymentAccounts.length === 1 ? '' : 's'}
+            </p>
+          </div>
+          <WalletCards className="size-6 opacity-80" />
+        </div>
+      </section>
 
+      <div className="grid gap-4 sm:grid-cols-2">
+        {moneyCards.map((item) => {
+          const Icon = item.icon;
           return (
             <button
               key={item.label}
               type="button"
               onClick={() => setLocation(item.href)}
-              className="group rounded-2xl border border-border bg-card p-6 text-left card-shadow transition-colors hover:border-primary/40 hover:bg-secondary/30"
+              className="group rounded-2xl border border-border bg-card p-5 text-left card-shadow transition-colors hover:border-primary/30 hover:bg-secondary/20"
             >
               <div className="flex items-start justify-between gap-4">
-                <span className="grid size-11 place-items-center rounded-xl bg-secondary text-primary">
+                <span className={`grid size-11 place-items-center rounded-xl ${item.tone} text-primary`}>
                   <Icon className="size-5" />
                 </span>
-
                 <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-1" />
               </div>
-
-              <h3 className="mt-5 font-display text-lg font-bold tracking-[-0.03em]">
-                {item.label}
-              </h3>
-
-              <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-                {item.description}
+              <p className="mt-4 text-sm font-bold">{item.label}</p>
+              <p className="mt-1 font-display text-xl font-bold tracking-[-0.03em]">
+                {item.value}
               </p>
+              <p className="mt-1 text-xs text-muted-foreground">{item.meta}</p>
             </button>
           );
         })}
       </div>
 
+      <section className="overflow-hidden rounded-2xl border border-border bg-card card-shadow">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <h3 className="font-display text-base font-bold">Recent Activity</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Latest income and expenses</p>
+          </div>
+          <button
+            onClick={() => setLocation('/transactions')}
+            className="text-xs font-bold text-primary"
+          >
+            View all
+          </button>
+        </div>
+
+        {moneyTransactions.length === 0 ? (
+          <div className="px-5 py-10 text-center text-sm text-muted-foreground">
+            No transactions yet.
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {moneyTransactions.slice(0, 5).map((transaction) => {
+              const positive = transaction.type === 'income';
+              const account = moneyAccounts.find((item) => item.id === transaction.account_id);
+              return (
+                <div key={transaction.id} className="grid gap-3 px-5 py-4 sm:grid-cols-[1fr_auto_auto] sm:items-center">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className={`grid size-9 shrink-0 place-items-center rounded-full ${positive ? 'bg-secondary text-primary' : 'bg-destructive/10 text-destructive'}`}>
+                      {positive ? <ArrowDownLeft className="size-4" /> : <ArrowUpRight className="size-4" />}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{transaction.description || 'Untitled transaction'}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{account?.name || 'Unlinked account'}</p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-muted-foreground">{hubDate(transaction.transaction_date)}</span>
+                  <span className={`text-sm font-bold ${positive ? 'text-primary' : 'text-destructive'}`}>
+                    {positive ? '+ ' : '- '}{hubMoney(Number(transaction.amount || 0))}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
       <div className="rounded-2xl border border-dashed border-primary/30 bg-[hsl(var(--primary)/.05)] p-5">
         <div className="flex gap-3">
           <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
-
           <div>
-            <p className="text-sm font-semibold">
-              Categories belong in Settings
-            </p>
-
+            <p className="text-sm font-semibold">Money Hub is your overview</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              Income and expense categories will be managed from Settings instead of appearing as a Money Hub section.
+              Accounts holds the detailed account records. Assets and Investments keep their own dedicated workspaces.
             </p>
           </div>
         </div>
       </div>
     </div>
   );
+
 }
 
 const standalonePages: Record<
@@ -1656,12 +1829,12 @@ function Router({
 
           <Route
             path="/accounts"
-            component={() => <Accounts initialSection="payment" />}
+            component={() => <Accounts />}
           />
 
           <Route
             path="/credit-cards"
-            component={() => <Accounts initialSection="credit" />}
+            component={() => <Accounts />}
           />
 
           <Route
