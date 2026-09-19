@@ -1,0 +1,286 @@
+Now create the first database migration for Financy.
+
+IMPORTANT:
+- Work ONLY on the database foundation.
+- Do not redesign the UI.
+- Do not add fake financial data.
+- Do not add authentication UI yet.
+- Do not implement investments yet.
+- Do not implement budgets, goals, loans, assets or liabilities yet.
+- Do not modify unrelated application features.
+- Preserve the existing working application.
+
+DATABASE:
+Supabase PostgreSQL.
+
+Create a migration file:
+
+supabase/migrations/001_core_money_schema.sql
+
+Create these tables:
+
+1. profiles
+Fields:
+- id UUID primary key
+- user_id UUID
+- full_name TEXT
+- email TEXT
+- avatar_url TEXT
+- language TEXT default 'en'
+- base_currency TEXT default 'EGP'
+- date_format TEXT default 'DD/MM/YYYY'
+- number_format TEXT default '1,234.56'
+- theme TEXT default 'system'
+- created_at TIMESTAMPTZ default now()
+- updated_at TIMESTAMPTZ default now()
+
+2. currencies
+Fields:
+- id UUID primary key
+- code TEXT unique not null
+- name TEXT not null
+- symbol TEXT
+- decimal_places INTEGER default 2
+- is_active BOOLEAN default true
+- created_at TIMESTAMPTZ default now()
+
+Insert only these standard currencies:
+EGP
+USD
+EUR
+SAR
+AED
+GBP
+
+Do not insert user financial data.
+
+3. exchange_rates
+Fields:
+- id UUID primary key
+- user_id UUID
+- from_currency TEXT not null
+- to_currency TEXT not null
+- rate NUMERIC(20,8) not null
+- rate_date DATE not null
+- source TEXT default 'manual'
+- created_at TIMESTAMPTZ default now()
+
+4. accounts
+Fields:
+- id UUID primary key
+- user_id UUID not null
+- name TEXT not null
+- account_type TEXT not null
+- currency_code TEXT not null
+- bank_name TEXT
+- provider TEXT
+- opening_balance NUMERIC(20,4) default 0
+- credit_limit NUMERIC(20,4)
+- account_number TEXT
+- iban TEXT
+- mobile_number TEXT
+- statement_date INTEGER
+- payment_due_date INTEGER
+- status TEXT default 'active'
+- notes TEXT
+- created_at TIMESTAMPTZ default now()
+- updated_at TIMESTAMPTZ default now()
+
+Allowed account_type values:
+bank
+cash
+credit_card
+prepaid
+wallet
+investment_cash
+
+Allowed status values:
+active
+archived
+closed
+
+Important:
+Do NOT store current_balance as a permanent field.
+Balances will be calculated from opening balance and transactions.
+
+5. categories
+Fields:
+- id UUID primary key
+- user_id UUID
+- name TEXT not null
+- type TEXT not null
+- parent_id UUID
+- icon TEXT
+- color TEXT
+- sort_order INTEGER default 0
+- status TEXT default 'active'
+- created_at TIMESTAMPTZ default now()
+- updated_at TIMESTAMPTZ default now()
+
+Allowed type:
+expense
+income
+
+parent_id must reference categories.id.
+
+6. people
+Fields:
+- id UUID primary key
+- user_id UUID
+- name TEXT not null
+- phone TEXT
+- email TEXT
+- notes TEXT
+- status TEXT default 'active'
+- created_at TIMESTAMPTZ default now()
+- updated_at TIMESTAMPTZ default now()
+
+7. tags
+Fields:
+- id UUID primary key
+- user_id UUID
+- name TEXT not null
+- color TEXT
+- created_at TIMESTAMPTZ default now()
+
+8. transaction_tags
+Fields:
+- transaction_id UUID not null
+- tag_id UUID not null
+- primary key(transaction_id, tag_id)
+
+9. transactions
+Fields:
+- id UUID primary key
+- user_id UUID not null
+- type TEXT not null
+- account_id UUID
+- category_id UUID
+- person_id UUID
+- amount NUMERIC(20,4) not null
+- currency_code TEXT not null
+- transaction_date DATE not null
+- transaction_time TIME
+- status TEXT default 'completed'
+- description TEXT
+- notes TEXT
+- recurring_id UUID
+- transfer_id UUID
+- goal_id UUID
+- created_at TIMESTAMPTZ default now()
+- updated_at TIMESTAMPTZ default now()
+
+Allowed type values:
+expense
+income
+transfer
+investment
+asset_purchase
+asset_sale
+debt_payment
+loan_payment
+
+Allowed status values:
+pending
+completed
+cancelled
+
+Important:
+- Store transaction amount as a positive number.
+- Direction is determined by transaction type.
+- Do not store a calculated balance.
+- Transfers must not be treated as income or expense.
+
+10. transfers
+Fields:
+- id UUID primary key
+- user_id UUID not null
+- from_account_id UUID not null
+- to_account_id UUID not null
+- amount NUMERIC(20,4) not null
+- currency_code TEXT not null
+- exchange_rate NUMERIC(20,8)
+- received_amount NUMERIC(20,4)
+- fee NUMERIC(20,4) default 0
+- fee_transaction_id UUID
+- transfer_date DATE not null
+- status TEXT default 'completed'
+- notes TEXT
+- created_at TIMESTAMPTZ default now()
+- updated_at TIMESTAMPTZ default now()
+
+Allowed status:
+pending
+completed
+cancelled
+
+11. attachments
+Fields:
+- id UUID primary key
+- user_id UUID not null
+- entity_type TEXT not null
+- entity_id UUID not null
+- file_name TEXT not null
+- file_type TEXT
+- file_size BIGINT
+- storage_path TEXT not null
+- created_at TIMESTAMPTZ default now()
+
+RELATIONSHIPS:
+- accounts.currency_code references currencies.code
+- exchange_rates currencies should reference currencies.code
+- categories.parent_id references categories.id
+- transaction_tags.transaction_id references transactions.id
+- transaction_tags.tag_id references tags.id
+- transactions.account_id references accounts.id
+- transactions.category_id references categories.id
+- transactions.person_id references people.id
+- transfers.from_account_id references accounts.id
+- transfers.to_account_id references accounts.id
+
+SECURITY:
+Enable Row Level Security on all user-owned tables.
+
+User-owned tables:
+profiles
+exchange_rates
+accounts
+categories
+people
+tags
+transaction_tags
+transactions
+transfers
+attachments
+
+For now, create safe RLS policies based on auth.uid() = user_id where applicable.
+
+Do NOT create insecure public policies.
+
+For profiles, the authenticated user's profile must only be accessible to that user.
+
+Currencies are reference data and can be readable by authenticated users.
+
+IMPORTANT:
+Use gen_random_uuid() for UUID defaults where appropriate.
+
+Create useful indexes for:
+- user_id
+- transaction_date
+- account_id
+- category_id
+- transfer_id
+- entity_type/entity_id
+
+Create updated_at trigger functionality for tables that contain updated_at.
+
+Do not insert sample accounts, transactions, income, expenses or investment data.
+
+After creating the migration:
+1. Run TypeScript checks.
+2. Make sure the application still runs.
+3. Review the SQL for foreign key and RLS errors.
+4. Do NOT change the UI.
+5. Do NOT apply destructive changes.
+6. Tell me exactly which files were created or modified.
+7. STOP after this migration.
