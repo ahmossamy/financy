@@ -16,15 +16,19 @@ if (!supabasePublishableKey) {
 }
 
 /**
- * Shared browser client for future Supabase-backed features.
+ * Shared browser client for Financy.
  *
- * Only the publishable key is used here. Authentication is not enabled by
- * Financy yet, so sessions are not persisted or refreshed by this client.
+ * Supabase Authentication is enabled and the session is persisted
+ * in the browser so the user remains signed in.
  */
-export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
-  auth: {
-    autoRefreshToken: false,
-    detectSessionInUrl: false,
-    persistSession: false,
+export const supabase = createClient(
+  supabaseUrl,
+  supabasePublishableKey,
+  {
+    auth: {
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      persistSession: true,
+    },
   },
-});
+);
