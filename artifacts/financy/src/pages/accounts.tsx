@@ -369,7 +369,7 @@ export default function Accounts() {
     setEditing(null);
     setForm({
       ...EMPTY_FORM,
-      account_type: nextType,
+      account_type: type,
       currency_code: 'EGP',
     });
     setError('');
