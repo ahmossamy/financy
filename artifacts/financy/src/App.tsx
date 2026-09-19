@@ -492,12 +492,16 @@ function SectionCard({
 
 function MetricCard({
   title,
+  value,
   icon: Icon,
   tone = 'green',
+  subtitle,
 }: {
   title: string;
+  value: string;
   icon: LucideIcon;
   tone?: 'green' | 'blue' | 'sand' | 'rose';
+  subtitle?: string;
 }) {
   const toneClass = {
     green: 'bg-[hsl(var(--primary)/.1)] text-primary',
@@ -512,24 +516,18 @@ function MetricCard({
         <span className="text-xs font-semibold text-muted-foreground">
           {title}
         </span>
-
-        <span
-          className={cn(
-            'grid size-8 place-items-center rounded-xl',
-            toneClass,
-          )}
-        >
+        <span className={cn('grid size-8 place-items-center rounded-xl', toneClass)}>
           <Icon className="size-4" strokeWidth={1.8} />
         </span>
       </div>
-
-      <p className="mt-5 font-display text-[22px] font-bold tracking-[-0.05em] text-muted-foreground/55">
-        Not set up
+      <p className="mt-5 font-display text-[22px] font-bold tracking-[-0.05em]">
+        {value}
       </p>
-
-      <p className="mt-1 text-[11px] text-muted-foreground">
-        Add your first item to see this here
-      </p>
+      {subtitle && (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {subtitle}
+        </p>
+      )}
     </div>
   );
 }
@@ -537,20 +535,130 @@ function MetricCard({
 function Dashboard() {
   const [, setLocation] = useLocation();
 
+  const [cash, setCash] = useState(0);
+  const [income, setIncome] = useState(0);
+  const [expenses, setExpenses] = useState(0);
+  const [recentTransactions, setRecentTransactions] = useState<
+    Array<{
+      id: string;
+      type: string;
+      amount: number;
+      currency_code: string;
+      transaction_date: string;
+      description: string | null;
+    }>
+  >([]);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadDashboard() {
+      setDashboardLoading(true);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        if (mounted) setDashboardLoading(false);
+        return;
+      }
+
+      const [accountsResult, transactionsResult] = await Promise.all([
+        supabase
+          .from('accounts')
+          .select('id, opening_balance, currency_code, status')
+          .eq('user_id', user.id)
+          .eq('status', 'active'),
+
+        supabase
+          .from('transactions')
+          .select(
+            'id, type, amount, currency_code, transaction_date, description, status',
+          )
+          .eq('user_id', user.id)
+          .in('type', ['income', 'expense'])
+          .order('transaction_date', { ascending: false })
+          .limit(8),
+      ]);
+
+      if (!mounted) return;
+
+      const accountRows = accountsResult.data ?? [];
+      const transactionRows = transactionsResult.data ?? [];
+
+      let egpCash = 0;
+
+      for (const account of accountRows) {
+        if (account.currency_code === 'EGP') {
+          egpCash += Number(account.opening_balance ?? 0);
+        }
+      }
+
+      let monthIncome = 0;
+      let monthExpenses = 0;
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth();
+
+      for (const transaction of transactionRows) {
+        if (transaction.status !== 'completed') continue;
+
+        const amount = Number(transaction.amount ?? 0);
+
+        if (transaction.currency_code === 'EGP') {
+          if (transaction.type === 'income') egpCash += amount;
+          if (transaction.type === 'expense') egpCash -= amount;
+        }
+
+        const transactionDate = new Date(
+          `${transaction.transaction_date}T00:00:00`,
+        );
+
+        if (
+          transactionDate.getFullYear() === currentYear &&
+          transactionDate.getMonth() === currentMonth
+        ) {
+          if (transaction.type === 'income') monthIncome += amount;
+          if (transaction.type === 'expense') monthExpenses += amount;
+        }
+      }
+
+      setCash(egpCash);
+      setIncome(monthIncome);
+      setExpenses(monthExpenses);
+      setRecentTransactions(transactionRows);
+      setDashboardLoading(false);
+    }
+
+    loadDashboard();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  function formatEGP(value: number) {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'EGP',
+      maximumFractionDigits: 2,
+    }).format(value);
+  }
+
+  const cashFlow = income - expenses;
+
   return (
     <div className="space-y-7">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="text-sm font-semibold text-primary">
-            Good morning
-          </p>
-
+          <p className="text-sm font-semibold text-primary">Good morning</p>
           <h2 className="mt-1 font-display text-[30px] font-extrabold tracking-[-0.055em] sm:text-[38px]">
             Welcome, <span className="text-primary">your name</span>
           </h2>
-
           <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
-            A clear view of your money starts here. Take it one small step at a time.
+            Here is your current financial picture based on the data in Financy.
           </p>
         </div>
 
@@ -565,32 +673,141 @@ function Dashboard() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricCard title="Net worth" icon={BarChart3} />
-        <MetricCard title="Cash" icon={WalletCards} tone="blue" />
-        <MetricCard title="Investments" icon={TrendingUp} />
-        <MetricCard title="Assets" icon={Landmark} tone="sand" />
-        <MetricCard title="Liabilities" icon={CreditCard} tone="rose" />
+        <MetricCard
+          title="Net worth"
+          value={dashboardLoading ? 'Loading...' : formatEGP(cash)}
+          icon={BarChart3}
+          subtitle="Cash only for now"
+        />
+        <MetricCard
+          title="Cash"
+          value={dashboardLoading ? 'Loading...' : formatEGP(cash)}
+          icon={WalletCards}
+          tone="blue"
+          subtitle="Active EGP accounts"
+        />
+        <MetricCard
+          title="Investments"
+          value="EGP 0.00"
+          icon={TrendingUp}
+          subtitle="Investment module next"
+        />
+        <MetricCard
+          title="Assets"
+          value="EGP 0.00"
+          icon={Landmark}
+          tone="sand"
+          subtitle="Asset module next"
+        />
+        <MetricCard
+          title="Liabilities"
+          value="EGP 0.00"
+          icon={CreditCard}
+          tone="rose"
+          subtitle="Liability module next"
+        />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
         <SectionCard title="Recent transactions" icon={ArrowLeftRight}>
-          <EmptyState
-            icon={FileText}
-            title="Your ledger is ready"
-            description="Connect or add an account to start seeing your recent transactions."
-            action="Add account"
-            onAction={() => setLocation('/accounts')}
-          />
+          {dashboardLoading ? (
+            <div className="px-6 py-12 text-center text-sm text-muted-foreground">
+              Loading transactions...
+            </div>
+          ) : recentTransactions.length === 0 ? (
+            <EmptyState
+              icon={FileText}
+              title="No transactions yet"
+              description="Add income or expenses to start building your financial history."
+              action="Add income"
+              onAction={() => setLocation('/income')}
+            />
+          ) : (
+            <div className="divide-y divide-border">
+              {recentTransactions.map((transaction) => (
+                <div
+                  key={transaction.id}
+                  className="flex items-center justify-between gap-4 px-5 py-4"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary">
+                      {transaction.type === 'income' ? (
+                        <ArrowDownLeft className="size-4 text-primary" />
+                      ) : (
+                        <ArrowUpRight className="size-4 text-primary" />
+                      )}
+                    </span>
+
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold">
+                        {transaction.description ||
+                          (transaction.type === 'income' ? 'Income' : 'Expense')}
+                      </p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {transaction.transaction_date}
+                      </p>
+                    </div>
+                  </div>
+
+                  <p
+                    className={cn(
+                      'shrink-0 font-display text-sm font-bold',
+                      transaction.type === 'income'
+                        ? 'text-primary'
+                        : 'text-destructive',
+                    )}
+                  >
+                    {transaction.type === 'income' ? '+' : '-'}
+                    {formatEGP(Number(transaction.amount ?? 0))}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </SectionCard>
 
         <SectionCard title="Monthly cash flow" icon={BarChart3}>
-          <EmptyState
-            icon={BarChart3}
-            title="No cash flow yet"
-            description="Income and expenses will become visible here once your workspace has data."
-            action="Add income"
-            onAction={() => setLocation('/money')}
-          />
+          <div className="space-y-5 p-5">
+            <div className="rounded-2xl bg-secondary/60 p-5">
+              <p className="text-xs font-semibold text-muted-foreground">
+                Current month
+              </p>
+              <p className="mt-2 font-display text-2xl font-bold tracking-[-0.04em]">
+                {dashboardLoading ? 'Loading...' : formatEGP(cashFlow)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Income minus expenses
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-border p-4">
+                <p className="text-[11px] font-semibold text-muted-foreground">
+                  Income
+                </p>
+                <p className="mt-2 font-display text-base font-bold text-primary">
+                  {dashboardLoading ? 'Loading...' : formatEGP(income)}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-border p-4">
+                <p className="text-[11px] font-semibold text-muted-foreground">
+                  Expenses
+                </p>
+                <p className="mt-2 font-display text-base font-bold text-destructive">
+                  {dashboardLoading ? 'Loading...' : formatEGP(expenses)}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setLocation('/expenses')}
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border text-xs font-bold hover:bg-muted"
+            >
+              View expenses
+              <ChevronRight className="size-4" />
+            </button>
+          </div>
         </SectionCard>
       </div>
 
@@ -598,8 +815,8 @@ function Dashboard() {
         <SectionCard title="Budget overview" icon={PieChart}>
           <EmptyState
             icon={PieChart}
-            title="Build a simple budget"
-            description="Give every part of your money a place when you're ready."
+            title="Budgets are next"
+            description="Budget tracking will use your real income and expenses once the budget module is built."
             action="Explore budgets"
             onAction={() => setLocation('/budgets')}
           />
@@ -608,8 +825,8 @@ function Dashboard() {
         <SectionCard title="Goals overview" icon={Target}>
           <EmptyState
             icon={Target}
-            title="Keep a goal in sight"
-            description="Create a goal for something that matters to you."
+            title="Goals are next"
+            description="Create goals after the core money flow is complete."
             action="Create a goal"
             onAction={() => setLocation('/goals')}
           />
@@ -618,8 +835,8 @@ function Dashboard() {
         <SectionCard title="Investment performance" icon={LineChart}>
           <EmptyState
             icon={LineChart}
-            title="Performance, without noise"
-            description="Your investment view will appear after you set up a portfolio."
+            title="Investments are next"
+            description="Portfolio values and performance will appear here after the investment module is connected."
             action="Set up investments"
             onAction={() => setLocation('/investments')}
           />
@@ -629,8 +846,8 @@ function Dashboard() {
       <SectionCard title="Upcoming transactions" icon={CalendarDays}>
         <EmptyState
           icon={CalendarDays}
-          title="Your calendar is clear"
-          description="Scheduled income and expenses will show up here so nothing catches you by surprise."
+          title="Scheduled transactions are next"
+          description="Scheduled income, expenses, bills, and installments will appear here when that module is connected."
           action="View calendar"
           onAction={() => setLocation('/calendar')}
         />
@@ -687,6 +904,11 @@ function HubPage({ type }: { type: 'money' | 'investments' }) {
           <button
             key={section}
             onClick={() => {
+              if (type === 'money' && section === 'Accounts') {
+                setLocation('/accounts');
+                return;
+              }
+
               if (type === 'money' && section === 'Income') {
                 setLocation('/income');
                 return;
@@ -1181,29 +1403,15 @@ function QuickAdd({
   open: boolean;
   onClose: () => void;
 }) {
+  const [, setLocation] = useLocation();
+
   if (!open) return null;
 
   const options = [
-    [
-      'Expense',
-      ArrowDownLeft,
-      'Record spending when you are ready.',
-    ],
-    [
-      'Income',
-      ArrowUpRight,
-      'Keep income visible and organized.',
-    ],
-    [
-      'Transfer',
-      ArrowLeftRight,
-      'Move money between your accounts.',
-    ],
-    [
-      'Investment',
-      TrendingUp,
-      'Add an investment activity.',
-    ],
+    ['Expense', ArrowDownLeft, 'Record spending when you are ready.', '/expenses'],
+    ['Income', ArrowUpRight, 'Keep income visible and organized.', '/income'],
+    ['Transfer', ArrowLeftRight, 'Move money between your accounts.', '/money'],
+    ['Investment', TrendingUp, 'Add an investment activity.', '/investments'],
   ] as const;
 
   return (
@@ -1216,10 +1424,7 @@ function QuickAdd({
       <div className="w-full max-w-md rounded-3xl border border-border bg-card p-5 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-primary">
-              Quick add
-            </p>
-
+            <p className="text-sm font-semibold text-primary">Quick add</p>
             <h2 className="font-display text-xl font-bold tracking-[-0.04em]">
               What would you like to add?
             </h2>
@@ -1236,10 +1441,13 @@ function QuickAdd({
         </div>
 
         <div className="grid gap-2">
-          {options.map(([label, Icon, description]) => (
+          {options.map(([label, Icon, description, href]) => (
             <button
               key={label}
-              onClick={onClose}
+              onClick={() => {
+                onClose();
+                setLocation(href);
+              }}
               className="flex items-center gap-3 rounded-2xl border border-border p-3 text-left transition-colors hover:border-primary/40 hover:bg-secondary"
               data-testid={`button-quick-add-${label.toLowerCase()}`}
             >
@@ -1248,10 +1456,7 @@ function QuickAdd({
               </span>
 
               <span>
-                <span className="block text-sm font-bold">
-                  {label}
-                </span>
-
+                <span className="block text-sm font-bold">{label}</span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
                   {description}
                 </span>
@@ -1263,7 +1468,7 @@ function QuickAdd({
         </div>
 
         <p className="mt-4 text-center text-[11px] text-muted-foreground">
-          Foundation mode — nothing is saved yet.
+          Quick add opens the relevant Financy module.
         </p>
       </div>
     </div>
