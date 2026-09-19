@@ -49,6 +49,7 @@ import {
 } from 'wouter';
 import NotFound from '@/pages/not-found';
 import Login from '@/pages/login';
+import Accounts from '@/pages/accounts';
 
 const queryClient = new QueryClient();
 
@@ -771,14 +772,6 @@ const standalonePages: Record<
     action?: string;
   }
 > = {
-  '/accounts': {
-    title: 'Accounts',
-    eyebrow: 'Money',
-    description:
-      'Keep a clear list of the places your money lives.',
-    icon: WalletCards,
-    action: 'Add account',
-  },
   '/transactions': {
     title: 'Transactions',
     eyebrow: 'Money',
@@ -1416,6 +1409,11 @@ function Router({
           <Route
             path="/dashboard"
             component={Dashboard}
+          />
+
+          <Route
+            path="/accounts"
+            component={Accounts}
           />
 
           <Route
