@@ -1,15 +1,22 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   ArrowDownLeft,
+  ArrowLeftRight,
   ArrowUpRight,
+  CalendarDays,
+  Check,
+  FileUp,
   Pencil,
   Plus,
+  Search,
   Trash2,
+  UserRound,
   X,
 } from 'lucide-react';
 import { supabase } from '@/lib/services/supabase';
 
-type TransactionType = 'income' | 'expense';
+type TransactionType = 'income' | 'expense' | 'transfer';
+type ListFilter = 'all' | TransactionType;
 
 type Account = {
   id: string;
@@ -43,6 +50,8 @@ type TransactionForm = {
   amount: string;
   currency_code: string;
   transaction_date: string;
+  payee: string;
+  payment_method: string;
   description: string;
   notes: string;
 };
@@ -53,9 +62,21 @@ const EMPTY_FORM: TransactionForm = {
   amount: '',
   currency_code: 'EGP',
   transaction_date: new Date().toISOString().slice(0, 10),
+  payee: '',
+  payment_method: '',
   description: '',
   notes: '',
 };
+
+const PAYMENT_METHODS = [
+  'Cash',
+  'Debit Card',
+  'Credit Card',
+  'Bank Transfer',
+  'Direct Debit',
+  'Online Payment',
+  'Other',
+];
 
 function formatMoney(amount: number, currency: string) {
   try {
@@ -69,16 +90,64 @@ function formatMoney(amount: number, currency: string) {
   }
 }
 
+function formatDate(date: string) {
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(new Date(`${date}T00:00:00`));
+  } catch {
+    return date;
+  }
+}
+
+function getDisplayNotes(notes: string | null) {
+  if (!notes) return '';
+  return notes
+    .replace(/\[Payee: .*?\]\s*/g, '')
+    .replace(/\[Payment Method: .*?\]\s*/g, '')
+    .trim();
+}
+
+function getMeta(notes: string | null) {
+  if (!notes) return { payee: '', paymentMethod: '' };
+  const payee = notes.match(/\[Payee: (.*?)\]/)?.[1] ?? '';
+  const paymentMethod =
+    notes.match(/\[Payment Method: (.*?)\]/)?.[1] ?? '';
+  return { payee, paymentMethod };
+}
+
+function buildNotes(form: TransactionForm) {
+  const metadata = [
+    form.payee.trim() ? `[Payee: ${form.payee.trim()}]` : '',
+    form.payment_method
+      ? `[Payment Method: ${form.payment_method}]`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const notes = form.notes.trim();
+  return [metadata, notes].filter(Boolean).join('\n') || null;
+}
+
 const inputClass =
-  'h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/10';
+  'h-12 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/10';
+
+const selectClass = `${inputClass} appearance-none`;
 
 export default function Transactions({
   defaultType = 'expense',
 }: {
   defaultType?: TransactionType;
 }) {
-  const [activeType, setActiveType] =
-    useState<TransactionType>(defaultType);
+  const [activeFilter, setActiveFilter] = useState<ListFilter>(
+    defaultType === 'transfer' ? 'all' : defaultType,
+  );
+  const [modalType, setModalType] = useState<TransactionType>(
+    defaultType === 'transfer' ? 'expense' : defaultType,
+  );
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -87,13 +156,15 @@ export default function Transactions({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] =
     useState<Transaction | null>(null);
+  const [createAnother, setCreateAnother] = useState(false);
+  const [attachmentName, setAttachmentName] = useState('');
 
-  const [form, setForm] =
-    useState<TransactionForm>(EMPTY_FORM);
+  const [form, setForm] = useState<TransactionForm>(EMPTY_FORM);
 
   async function loadData() {
     setLoading(true);
@@ -118,18 +189,14 @@ export default function Transactions({
             'id, account_id, category_id, type, amount, currency_code, transaction_date, description, notes, status',
           )
           .eq('user_id', user.id)
-          .in('type', ['income', 'expense'])
-          .order('transaction_date', {
-            ascending: false,
-          }),
-
+          .in('type', ['income', 'expense', 'transfer'])
+          .order('transaction_date', { ascending: false }),
         supabase
           .from('accounts')
           .select('id, name, currency_code, status')
           .eq('user_id', user.id)
           .eq('status', 'active')
           .order('name'),
-
         supabase
           .from('categories')
           .select('id, name, status')
@@ -157,18 +224,9 @@ export default function Transactions({
       return;
     }
 
-    setTransactions(
-      (transactionsResult.data ?? []) as Transaction[],
-    );
-
-    setAccounts(
-      (accountsResult.data ?? []) as Account[],
-    );
-
-    setCategories(
-      (categoriesResult.data ?? []) as Category[],
-    );
-
+    setTransactions((transactionsResult.data ?? []) as Transaction[]);
+    setAccounts((accountsResult.data ?? []) as Account[]);
+    setCategories((categoriesResult.data ?? []) as Category[]);
     setLoading(false);
   }
 
@@ -176,86 +234,104 @@ export default function Transactions({
     loadData();
   }, []);
 
-  const filteredTransactions = useMemo(
-    () =>
-      transactions.filter(
-        (transaction) => transaction.type === activeType,
-      ),
-    [transactions, activeType],
-  );
+  const visibleTransactions = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return transactions.filter((transaction) => {
+      const matchesType =
+        activeFilter === 'all' || transaction.type === activeFilter;
+
+      if (!matchesType) return false;
+      if (!query) return true;
+
+      const account = accounts.find(
+        (item) => item.id === transaction.account_id,
+      );
+      const category = categories.find(
+        (item) => item.id === transaction.category_id,
+      );
+      const meta = getMeta(transaction.notes);
+
+      return [
+        transaction.description,
+        account?.name,
+        category?.name,
+        meta.payee,
+        meta.paymentMethod,
+        transaction.currency_code,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query));
+    });
+  }, [transactions, accounts, categories, activeFilter, search]);
 
   const totals = useMemo(() => {
-    const result: Record<string, number> = {};
+    const result: Record<string, { income: number; expense: number }> = {};
 
-    filteredTransactions.forEach((transaction) => {
-      result[transaction.currency_code] =
-        (result[transaction.currency_code] ?? 0) +
-        Number(transaction.amount || 0);
+    visibleTransactions.forEach((transaction) => {
+      if (transaction.type === 'transfer') return;
+      const currency = transaction.currency_code;
+      if (!result[currency]) result[currency] = { income: 0, expense: 0 };
+      result[currency][transaction.type] += Number(transaction.amount || 0);
     });
 
     return result;
-  }, [filteredTransactions]);
+  }, [visibleTransactions]);
 
-  function openAddModal() {
-    setEditingTransaction(null);
-
+  function resetForm(type: TransactionType) {
     const firstAccount = accounts[0];
-
     setForm({
       ...EMPTY_FORM,
-      currency_code:
-        firstAccount?.currency_code ?? 'EGP',
+      currency_code: firstAccount?.currency_code ?? 'EGP',
       account_id: firstAccount?.id ?? '',
-      category_id: categories[0]?.id ?? '',
     });
+    setModalType(type);
+    setAttachmentName('');
+  }
 
+  function openAddModal(type: TransactionType = 'expense') {
+    setEditingTransaction(null);
+    resetForm(type);
+    setCreateAnother(false);
     setError('');
     setModalOpen(true);
   }
 
   function openEditModal(transaction: Transaction) {
+    const meta = getMeta(transaction.notes);
     setEditingTransaction(transaction);
-
+    setModalType(transaction.type);
     setForm({
       account_id: transaction.account_id ?? '',
       category_id: transaction.category_id ?? '',
       amount: String(transaction.amount ?? ''),
       currency_code: transaction.currency_code,
       transaction_date: transaction.transaction_date,
+      payee: meta.payee,
+      payment_method: meta.paymentMethod,
       description: transaction.description ?? '',
-      notes: transaction.notes ?? '',
+      notes: getDisplayNotes(transaction.notes),
     });
-
+    setAttachmentName('');
+    setCreateAnother(false);
     setError('');
     setModalOpen(true);
   }
 
-  function updateField(
-    field: keyof TransactionForm,
-    value: string,
-  ) {
-    setForm((current) => ({
-      ...current,
-      [field]: value,
-    }));
+  function updateField(field: keyof TransactionForm, value: string) {
+    setForm((current) => ({ ...current, [field]: value }));
   }
 
   function handleAccountChange(value: string) {
-    const account = accounts.find(
-      (item) => item.id === value,
-    );
-
+    const account = accounts.find((item) => item.id === value);
     setForm((current) => ({
       ...current,
       account_id: value,
-      currency_code:
-        account?.currency_code ?? current.currency_code,
+      currency_code: account?.currency_code ?? current.currency_code,
     }));
   }
 
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>,
-  ) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!form.account_id) {
@@ -264,7 +340,6 @@ export default function Transactions({
     }
 
     const amount = Number(form.amount);
-
     if (!Number.isFinite(amount) || amount <= 0) {
       setError('Amount must be greater than zero.');
       return;
@@ -291,12 +366,12 @@ export default function Transactions({
     const payload = {
       account_id: form.account_id,
       category_id: form.category_id || null,
-      type: activeType,
+      type: modalType,
       amount,
       currency_code: form.currency_code,
       transaction_date: form.transaction_date,
       description: form.description.trim() || null,
-      notes: form.notes.trim() || null,
+      notes: buildNotes(form),
       status: 'completed',
     };
 
@@ -308,10 +383,7 @@ export default function Transactions({
           .eq('user_id', user.id)
       : await supabase
           .from('transactions')
-          .insert({
-            ...payload,
-            user_id: user.id,
-          });
+          .insert({ ...payload, user_id: user.id });
 
     if (result.error) {
       setError(result.error.message);
@@ -319,25 +391,27 @@ export default function Transactions({
       return;
     }
 
+    if (createAnother && !editingTransaction) {
+      resetForm(modalType);
+      setSaving(false);
+      await loadData();
+      return;
+    }
+
     setSaving(false);
     setModalOpen(false);
     setEditingTransaction(null);
     setForm(EMPTY_FORM);
-
     await loadData();
   }
 
-  async function deleteTransaction(
-    transaction: Transaction,
-  ) {
+  async function deleteTransaction(transaction: Transaction) {
     const confirmed = window.confirm(
-      `Delete "${transaction.description || activeType}"?`,
+      `Delete "${transaction.description || transaction.type}"?`,
     );
-
     if (!confirmed) return;
 
     setError('');
-
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -347,113 +421,147 @@ export default function Transactions({
       return;
     }
 
-    const { error } = await supabase
+    const { error: deleteError } = await supabase
       .from('transactions')
       .delete()
       .eq('id', transaction.id)
       .eq('user_id', user.id);
 
-    if (error) {
-      setError(error.message);
+    if (deleteError) {
+      setError(deleteError.message);
       return;
     }
 
     await loadData();
   }
 
-  const pageTitle =
-    activeType === 'income' ? 'Income' : 'Expenses';
+  const modalTitle = editingTransaction
+    ? `Edit ${modalType}`
+    : 'Add Transaction';
 
-  const pageDescription =
-    activeType === 'income'
-      ? 'Record and manage the money coming into your accounts.'
-      : 'Record and manage the money leaving your accounts.';
+  const modalButtonLabel = saving
+    ? 'Saving...'
+    : editingTransaction
+      ? 'Save Changes'
+      : modalType === 'expense'
+        ? 'Save Expense'
+        : modalType === 'income'
+          ? 'Save Income'
+          : 'Save Transfer';
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
         <div>
-          <p className="text-sm font-semibold text-primary">
-            Money
-          </p>
-
+          <p className="text-sm font-semibold text-primary">Money</p>
           <h2 className="mt-1 font-display text-[34px] font-extrabold tracking-[-0.06em]">
-            {pageTitle}
+            Transactions
           </h2>
-
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            {pageDescription}
+            Record and manage your income, expenses and transfers.
           </p>
         </div>
 
         <button
-          onClick={openAddModal}
+          onClick={() => openAddModal('expense')}
           disabled={accounts.length === 0}
-          className="inline-flex h-10 w-fit items-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-11 w-fit items-center gap-2 rounded-2xl bg-primary px-5 text-sm font-bold text-primary-foreground shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Plus className="size-4" />
-          Add {activeType}
+          Add Transaction
         </button>
       </div>
 
-      <div className="inline-flex rounded-xl border border-border bg-card p-1">
-        <button
-          onClick={() => setActiveType('income')}
-          className={`rounded-lg px-4 py-2 text-xs font-bold ${
-            activeType === 'income'
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:bg-muted'
-          }`}
-        >
-          Income
-        </button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="inline-flex w-fit rounded-2xl border border-border bg-card p-1">
+          {(['all', 'income', 'expense', 'transfer'] as ListFilter[]).map(
+            (filter) => {
+              const label =
+                filter === 'all'
+                  ? 'All'
+                  : filter === 'expense'
+                    ? 'Expenses'
+                    : filter[0].toUpperCase() + filter.slice(1);
 
-        <button
-          onClick={() => setActiveType('expense')}
-          className={`rounded-lg px-4 py-2 text-xs font-bold ${
-            activeType === 'expense'
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:bg-muted'
-          }`}
-        >
-          Expenses
-        </button>
+              return (
+                <button
+                  key={filter}
+                  onClick={() => setActiveFilter(filter)}
+                  className={`rounded-xl px-4 py-2 text-xs font-bold transition-colors ${
+                    activeFilter === filter
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            },
+          )}
+        </div>
+
+        <div className="relative w-full sm:max-w-sm">
+          <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search transactions..."
+            className="h-11 w-full rounded-2xl border border-border bg-card pl-11 pr-4 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+          />
+        </div>
       </div>
 
       {error && (
-        <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
 
       {accounts.length === 0 && !loading && (
         <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-5 text-sm">
-          Add an account first before recording {pageTitle.toLowerCase()}.
+          Add an account first before recording transactions.
         </div>
       )}
 
-      {!loading && filteredTransactions.length > 0 && (
+      {!loading && activeFilter !== 'transfer' && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {Object.entries(totals).map(
-            ([currency, total]) => (
-              <div
-                key={currency}
-                className="rounded-2xl border border-border bg-card p-5 card-shadow"
-              >
-                <p className="text-xs font-semibold text-muted-foreground">
-                  Total {pageTitle.toLowerCase()}
-                </p>
-
+          {Object.entries(totals).map(([currency, value]) => (
+            <div
+              key={currency}
+              className="rounded-2xl border border-border bg-card p-5 card-shadow"
+            >
+              <p className="text-xs font-semibold text-muted-foreground">
+                {activeFilter === 'income'
+                  ? 'Total income'
+                  : activeFilter === 'expense'
+                    ? 'Total expenses'
+                    : 'Income / Expenses'}
+              </p>
+              {activeFilter === 'all' ? (
+                <div className="mt-2 space-y-1">
+                  <p className="font-display text-xl font-bold text-primary">
+                    + {formatMoney(value.income, currency)}
+                  </p>
+                  <p className="font-display text-xl font-bold text-destructive">
+                    - {formatMoney(value.expense, currency)}
+                  </p>
+                </div>
+              ) : (
                 <p className="mt-2 font-display text-2xl font-bold tracking-[-0.04em]">
-                  {formatMoney(total, currency)}
+                  {formatMoney(
+                    activeFilter === 'income' ? value.income : value.expense,
+                    currency,
+                  )}
                 </p>
-
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {filteredTransactions.length} transaction(s)
-                </p>
-              </div>
-            ),
-          )}
+              )}
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {visibleTransactions.filter(
+                  (item) => item.currency_code === currency,
+                ).length}{' '}
+                transaction(s)
+              </p>
+            </div>
+          ))}
         </div>
       )}
 
@@ -461,64 +569,56 @@ export default function Transactions({
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
             <h3 className="font-display text-sm font-bold">
-              {pageTitle}
+              {activeFilter === 'all'
+                ? 'All Transactions'
+                : activeFilter === 'expense'
+                  ? 'Expenses'
+                  : activeFilter[0].toUpperCase() + activeFilter.slice(1)}
             </h3>
-
             <p className="mt-1 text-xs text-muted-foreground">
-              {filteredTransactions.length} transaction(s)
+              {visibleTransactions.length} transaction(s)
             </p>
           </div>
-
-          {activeType === 'income' ? (
-            <ArrowDownLeft className="size-5 text-primary" />
-          ) : (
-            <ArrowUpRight className="size-5 text-primary" />
-          )}
+          <ArrowLeftRight className="size-5 text-primary" />
         </div>
 
         {loading ? (
           <div className="px-5 py-12 text-center text-sm text-muted-foreground">
             Loading transactions...
           </div>
-        ) : filteredTransactions.length === 0 ? (
+        ) : visibleTransactions.length === 0 ? (
           <div className="px-5 py-14 text-center">
             <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-secondary text-secondary-foreground">
-              {activeType === 'income' ? (
-                <ArrowDownLeft className="size-5" />
-              ) : (
-                <ArrowUpRight className="size-5" />
-              )}
+              <ArrowLeftRight className="size-5" />
             </div>
-
             <h3 className="mt-4 font-display text-base font-bold">
-              No {pageTitle.toLowerCase()} yet
+              No transactions yet
             </h3>
-
             <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-              Add your first {activeType} to start building your
-              financial history.
+              Add your first transaction to start building your financial history.
             </p>
-
             {accounts.length > 0 && (
               <button
-                onClick={openAddModal}
+                onClick={() => openAddModal('expense')}
                 className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground"
               >
                 <Plus className="size-4" />
-                Add {activeType}
+                Add Transaction
               </button>
             )}
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {filteredTransactions.map((transaction) => {
+            {visibleTransactions.map((transaction) => {
               const account = accounts.find(
                 (item) => item.id === transaction.account_id,
               );
-
               const category = categories.find(
                 (item) => item.id === transaction.category_id,
               );
+              const meta = getMeta(transaction.notes);
+              const isIncome = transaction.type === 'income';
+              const isTransfer = transaction.type === 'transfer';
 
               return (
                 <div
@@ -526,8 +626,18 @@ export default function Transactions({
                   className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-secondary text-secondary-foreground">
-                      {activeType === 'income' ? (
+                    <div
+                      className={`grid size-11 shrink-0 place-items-center rounded-xl ${
+                        isTransfer
+                          ? 'bg-blue-50 text-blue-700'
+                          : isIncome
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-rose-50 text-rose-700'
+                      }`}
+                    >
+                      {isTransfer ? (
+                        <ArrowLeftRight className="size-5" />
+                      ) : isIncome ? (
                         <ArrowDownLeft className="size-5" />
                       ) : (
                         <ArrowUpRight className="size-5" />
@@ -535,31 +645,44 @@ export default function Transactions({
                     </div>
 
                     <div className="min-w-0">
-                      <h4 className="truncate text-sm font-bold">
-                        {transaction.description ||
-                          category?.name ||
-                          pageTitle}
-                      </h4>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="truncate text-sm font-bold">
+                          {transaction.description ||
+                            meta.payee ||
+                            category?.name ||
+                            transaction.type}
+                        </h4>
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                          {transaction.type}
+                        </span>
+                      </div>
 
                       <p className="mt-1 text-xs text-muted-foreground">
                         {account?.name || 'Account'}
-                        {category?.name
-                          ? ` • ${category.name}`
-                          : ''}
-                        {` • ${transaction.transaction_date}`}
+                        {category?.name ? ` • ${category.name}` : ''}
+                        {meta.payee ? ` • ${meta.payee}` : ''}
+                        {` • ${formatDate(transaction.transaction_date)}`}
                       </p>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between gap-5 sm:justify-end">
                     <div className="text-left sm:text-right">
-                      <p className="font-display text-base font-bold">
+                      <p
+                        className={`font-display text-base font-bold ${
+                          isTransfer
+                            ? 'text-foreground'
+                            : isIncome
+                              ? 'text-primary'
+                              : 'text-destructive'
+                        }`}
+                      >
+                        {isIncome ? '+' : isTransfer ? '' : '-'}{' '}
                         {formatMoney(
                           Number(transaction.amount),
                           transaction.currency_code,
                         )}
                       </p>
-
                       <p className="mt-1 text-[11px] text-muted-foreground">
                         {transaction.status}
                       </p>
@@ -567,19 +690,14 @@ export default function Transactions({
 
                     <div className="flex gap-1">
                       <button
-                        onClick={() =>
-                          openEditModal(transaction)
-                        }
+                        onClick={() => openEditModal(transaction)}
                         className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground"
                         aria-label="Edit transaction"
                       >
                         <Pencil className="size-4" />
                       </button>
-
                       <button
-                        onClick={() =>
-                          deleteTransaction(transaction)
-                        }
+                        onClick={() => deleteTransaction(transaction)}
                         className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                         aria-label="Delete transaction"
                       >
@@ -596,231 +714,292 @@ export default function Transactions({
 
       {modalOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center sm:p-6"
           role="dialog"
           aria-modal="true"
         >
-          <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-3xl border border-border bg-card shadow-2xl">
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-5 py-4">
+          <div className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-[28px] border border-border bg-card shadow-2xl">
+            <div className="sticky top-0 z-20 flex items-start justify-between border-b border-border bg-card px-7 py-5">
               <div>
-                <p className="text-xs font-semibold text-primary">
-                  Money
+                <p className="text-sm font-semibold text-primary">
+                  Transactions
                 </p>
-
-                <h3 className="font-display text-lg font-bold">
-                  {editingTransaction
-                    ? `Edit ${activeType}`
-                    : `Add ${activeType}`}
+                <h3 className="mt-1 font-display text-2xl font-extrabold tracking-[-0.04em]">
+                  {modalTitle}
                 </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Record your income, expense or transfer.
+                </p>
               </div>
-
               <button
                 onClick={() => setModalOpen(false)}
-                className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted"
+                className="grid size-10 place-items-center rounded-xl text-muted-foreground hover:bg-muted"
                 aria-label="Close"
               >
                 <X className="size-5" />
               </button>
             </div>
 
-            <form
-              onSubmit={handleSubmit}
-              className="space-y-5 p-5"
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block">
-                  <span className="mb-2 block text-xs font-bold">
-                    Account *
-                  </span>
-
-                  <select
-                    value={form.account_id}
-                    onChange={(event) =>
-                      handleAccountChange(
-                        event.target.value,
-                      )
-                    }
-                    className={inputClass}
-                    required
-                  >
-                    <option value="">
-                      Select account
-                    </option>
-
-                    {accounts.map((account) => (
-                      <option
-                        key={account.id}
-                        value={account.id}
-                      >
-                        {account.name} —{' '}
-                        {account.currency_code}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-xs font-bold">
-                    Category
-                  </span>
-
-                  <select
-                    value={form.category_id}
-                    onChange={(event) =>
-                      updateField(
-                        'category_id',
-                        event.target.value,
-                      )
-                    }
-                    className={inputClass}
-                  >
-                    <option value="">
-                      No category
-                    </option>
-
-                    {categories.map((category) => (
-                      <option
-                        key={category.id}
-                        value={category.id}
-                      >
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-xs font-bold">
-                    Amount *
-                  </span>
-
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    value={form.amount}
-                    onChange={(event) =>
-                      updateField(
-                        'amount',
-                        event.target.value,
-                      )
-                    }
-                    className={inputClass}
-                    placeholder="0.00"
-                    required
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-xs font-bold">
-                    Currency *
-                  </span>
-
-                  <input
-                    value={form.currency_code}
-                    onChange={(event) =>
-                      updateField(
-                        'currency_code',
-                        event.target.value,
-                      )
-                    }
-                    className={inputClass}
-                    maxLength={3}
-                    required
-                  />
-                </label>
-
-                <label className="block sm:col-span-2">
-                  <span className="mb-2 block text-xs font-bold">
-                    Date *
-                  </span>
-
-                  <input
-                    type="date"
-                    value={form.transaction_date}
-                    onChange={(event) =>
-                      updateField(
-                        'transaction_date',
-                        event.target.value,
-                      )
-                    }
-                    className={inputClass}
-                    required
-                  />
-                </label>
-              </div>
-
-              <label className="block">
-                <span className="mb-2 block text-xs font-bold">
-                  Description
-                </span>
-
-                <input
-                  value={form.description}
-                  onChange={(event) =>
-                    updateField(
-                      'description',
-                      event.target.value,
-                    )
-                  }
-                  className={inputClass}
-                  placeholder={
-                    activeType === 'income'
-                      ? 'Salary'
-                      : 'Groceries'
-                  }
-                />
-              </label>
-
-              <label className="block">
-                <span className="mb-2 block text-xs font-bold">
-                  Notes
-                </span>
-
-                <textarea
-                  value={form.notes}
-                  onChange={(event) =>
-                    updateField(
-                      'notes',
-                      event.target.value,
-                    )
-                  }
-                  rows={3}
-                  className={`${inputClass} min-h-24 py-3`}
-                  placeholder="Optional notes..."
-                />
-              </label>
-
-              {error && (
-                <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-3 text-xs font-medium text-destructive">
-                  {error}
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 border-t border-border pt-5">
+            <div className="px-7 pt-5">
+              <div className="grid grid-cols-3 rounded-2xl border border-border bg-background p-1">
                 <button
                   type="button"
-                  onClick={() =>
-                    setModalOpen(false)
-                  }
-                  className="h-10 rounded-xl border border-border px-4 text-xs font-bold"
+                  onClick={() => !editingTransaction && setModalType('expense')}
+                  disabled={!!editingTransaction}
+                  className={`flex h-12 items-center justify-center gap-2 rounded-xl text-sm font-bold ${
+                    modalType === 'expense'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'text-muted-foreground hover:bg-muted'
+                  } disabled:cursor-default`}
                 >
-                  Cancel
+                  <ArrowUpRight className="size-4" />
+                  Expense
                 </button>
-
                 <button
-                  type="submit"
-                  disabled={saving}
-                  className="h-10 rounded-xl bg-primary px-5 text-xs font-bold text-primary-foreground disabled:opacity-60"
+                  type="button"
+                  onClick={() => !editingTransaction && setModalType('income')}
+                  disabled={!!editingTransaction}
+                  className={`flex h-12 items-center justify-center gap-2 rounded-xl text-sm font-bold ${
+                    modalType === 'income'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'text-muted-foreground hover:bg-muted'
+                  } disabled:cursor-default`}
                 >
-                  {saving
-                    ? 'Saving...'
-                    : editingTransaction
-                      ? 'Save changes'
-                      : `Create ${activeType}`}
+                  <ArrowDownLeft className="size-4" />
+                  Income
+                </button>
+                <button
+                  type="button"
+                  onClick={() => !editingTransaction && setModalType('transfer')}
+                  disabled={!!editingTransaction}
+                  className={`flex h-12 items-center justify-center gap-2 rounded-xl text-sm font-bold ${
+                    modalType === 'transfer'
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'text-muted-foreground hover:bg-muted'
+                  } disabled:cursor-default`}
+                >
+                  <ArrowLeftRight className="size-4" />
+                  Transfer
                 </button>
               </div>
-            </form>
+            </div>
+
+            {modalType === 'transfer' ? (
+              <div className="px-7 py-7">
+                <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5 text-sm text-blue-900">
+                  <p className="font-bold">Transfer setup</p>
+                  <p className="mt-1 leading-6">
+                    Transfers use a source account and destination account. The dedicated transfer workflow will be connected when the transfer fields are wired to the transfers table.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setModalType('expense')}
+                    className="mt-4 h-10 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground"
+                  >
+                    Continue with Expense
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-6 px-7 py-7">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <label className="block sm:col-span-1">
+                    <span className="mb-2 block text-sm font-bold">Amount *</span>
+                    <div className="flex overflow-hidden rounded-2xl border border-border bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/10">
+                      <select
+                        value={form.currency_code}
+                        onChange={(event) => updateField('currency_code', event.target.value)}
+                        className="w-24 border-r border-border bg-transparent px-4 text-sm font-semibold outline-none"
+                      >
+                        {Array.from(
+                          new Set(['EGP', 'USD', 'AED', 'SAR', ...accounts.map((account) => account.currency_code)]),
+                        ).map((currency) => (
+                          <option key={currency} value={currency}>
+                            {currency}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        value={form.amount}
+                        onChange={(event) => updateField('amount', event.target.value)}
+                        className="h-12 min-w-0 flex-1 bg-transparent px-4 text-base outline-none"
+                        placeholder="0.00"
+                        required
+                      />
+                    </div>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold">Date *</span>
+                    <div className="relative">
+                      <CalendarDays className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        type="date"
+                        value={form.transaction_date}
+                        onChange={(event) => updateField('transaction_date', event.target.value)}
+                        className={`${inputClass} pl-11`}
+                        required
+                      />
+                    </div>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold">Account *</span>
+                    <select
+                      value={form.account_id}
+                      onChange={(event) => handleAccountChange(event.target.value)}
+                      className={selectClass}
+                      required
+                    >
+                      <option value="">Select account</option>
+                      {accounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name} · {account.currency_code}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold">Category</span>
+                    <select
+                      value={form.category_id}
+                      onChange={(event) => updateField('category_id', event.target.value)}
+                      className={selectClass}
+                    >
+                      <option value="">No category</option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold">Payee / Merchant</span>
+                    <div className="relative">
+                      <UserRound className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        value={form.payee}
+                        onChange={(event) => updateField('payee', event.target.value)}
+                        className={`${inputClass} pl-11`}
+                        placeholder="e.g. Carrefour, Amazon"
+                      />
+                    </div>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold">Payment Method</span>
+                    <select
+                      value={form.payment_method}
+                      onChange={(event) => updateField('payment_method', event.target.value)}
+                      className={selectClass}
+                    >
+                      <option value="">Not specified</option>
+                      {PAYMENT_METHODS.map((method) => (
+                        <option key={method} value={method}>
+                          {method}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block sm:col-span-2">
+                    <span className="mb-2 block text-sm font-bold">Description</span>
+                    <input
+                      value={form.description}
+                      onChange={(event) => updateField('description', event.target.value)}
+                      className={inputClass}
+                      placeholder={modalType === 'income' ? 'Salary' : 'What did you spend on?'}
+                    />
+                  </label>
+
+                  <label className="block sm:col-span-2">
+                    <span className="mb-2 block text-sm font-bold">Notes</span>
+                    <textarea
+                      value={form.notes}
+                      onChange={(event) => updateField('notes', event.target.value)}
+                      rows={3}
+                      className="min-h-28 w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/10"
+                      placeholder="Optional notes..."
+                    />
+                  </label>
+
+                  <div className="sm:col-span-2">
+                    <div className="mb-2 flex items-center gap-2 text-sm font-bold">
+                      <FileUp className="size-4 text-muted-foreground" />
+                      Attachments
+                    </div>
+                    <label className="flex min-h-24 cursor-pointer items-center justify-center rounded-2xl border border-dashed border-border bg-background px-4 text-center hover:border-primary hover:bg-primary/5">
+                      <input
+                        type="file"
+                        className="sr-only"
+                        onChange={(event) => setAttachmentName(event.target.files?.[0]?.name ?? '')}
+                      />
+                      <div>
+                        <p className="text-sm font-semibold text-primary">
+                          {attachmentName || 'Click to upload'}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Images, PDFs or other files
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {attachmentName && (
+                  <div className="flex items-center gap-2 rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">
+                    <Check className="size-4 text-primary" />
+                    {attachmentName} selected. File storage will be connected in the attachments phase.
+                  </div>
+                )}
+
+                {error && (
+                  <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-3 text-xs font-medium text-destructive">
+                    {error}
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-4 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
+                  <label className="flex items-start gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={createAnother}
+                      onChange={(event) => setCreateAnother(event.target.checked)}
+                      className="mt-1 size-4 accent-primary"
+                    />
+                    <span>
+                      <span className="block font-semibold">Create another transaction</span>
+                      <span className="block text-xs text-muted-foreground">
+                        Keep this form open after saving
+                      </span>
+                    </span>
+                  </label>
+
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setModalOpen(false)}
+                      className="h-11 rounded-2xl border border-border px-5 text-sm font-bold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className="h-11 rounded-2xl bg-primary px-6 text-sm font-bold text-primary-foreground disabled:opacity-60"
+                    >
+                      {modalButtonLabel}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
