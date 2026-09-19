@@ -15,8 +15,6 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/services/supabase';
 
-type AccountSection = 'payment' | 'credit';
-
 type Account = {
   id: string;
   name: string;
@@ -124,16 +122,9 @@ function formatDate(value: string) {
   }).format(date);
 }
 
-export default function Accounts({
-  initialSection = 'payment',
-}: {
-  initialSection?: AccountSection;
-}) {
+export default function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
-  const [section, setSection] =
-    useState<AccountSection>(initialSection);
-
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -147,10 +138,6 @@ export default function Accounts({
 
   const [selectedAccount, setSelectedAccount] =
     useState<Account | null>(null);
-
-  useEffect(() => {
-    setSection(initialSection);
-  }, [initialSection]);
 
   async function loadData() {
     setLoading(true);
@@ -250,14 +237,10 @@ export default function Accounts({
     [accounts],
   );
 
-  const activeList = section === 'payment'
-    ? paymentAccounts
-    : creditCards;
-
   const visibleAccounts = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
 
-    return activeList.filter((account) => {
+    return accounts.filter((account) => {
       if (!showClosed && account.status !== 'active') {
         return false;
       }
@@ -269,15 +252,24 @@ export default function Accounts({
         account.bank_name,
         account.provider,
         account.currency_code,
+        accountTypeLabel(account.account_type),
       ]
         .filter(Boolean)
         .some((value) =>
           String(value).toLowerCase().includes(normalizedSearch),
         );
     });
-  }, [activeList, search, showClosed]);
+  }, [accounts, search, showClosed]);
 
-  const activeAccounts = activeList.filter(
+  const activeAccounts = accounts.filter(
+    (account) => account.status === 'active',
+  );
+
+  const paymentActiveAccounts = paymentAccounts.filter(
+    (account) => account.status === 'active',
+  );
+
+  const activeCreditCards = creditCards.filter(
     (account) => account.status === 'active',
   );
 
@@ -292,6 +284,48 @@ export default function Accounts({
 
     return result;
   }, [activeAccounts, balances]);
+
+  const paymentTotalsByCurrency = useMemo(() => {
+    const result: Record<string, number> = {};
+
+    for (const account of paymentActiveAccounts) {
+      result[account.currency_code] =
+        (result[account.currency_code] ?? 0) +
+        Number(balances[account.id] ?? 0);
+    }
+
+    return result;
+  }, [paymentActiveAccounts, balances]);
+
+  const creditTotalsByCurrency = useMemo(() => {
+    const result: Record<string, number> = {};
+
+    for (const account of activeCreditCards) {
+      result[account.currency_code] =
+        (result[account.currency_code] ?? 0) +
+        Math.max(0, -Number(balances[account.id] ?? 0));
+    }
+
+    return result;
+  }, [activeCreditCards, balances]);
+
+  const groupedAccounts = useMemo(() => {
+    const groups = [
+      { key: 'bank', label: 'Bank Accounts', types: ['bank'] },
+      { key: 'cash', label: 'Cash Accounts', types: ['cash'] },
+      { key: 'wallet', label: 'E-Wallets & Prepaid', types: ['wallet', 'prepaid'] },
+      { key: 'credit', label: 'Credit Cards', types: ['credit_card'] },
+    ];
+
+    return groups
+      .map((group) => ({
+        ...group,
+        accounts: visibleAccounts.filter((account) =>
+          group.types.includes(account.account_type),
+        ),
+      }))
+      .filter((group) => group.accounts.length > 0);
+  }, [visibleAccounts]);
 
   const selectedTransactions = useMemo(() => {
     if (!selectedAccount) return [];
@@ -330,10 +364,7 @@ export default function Accounts({
     );
   }, [selectedAccount, selectedTransactions]);
 
-  function openAdd(type?: string) {
-    const nextType =
-      type ??
-      (section === 'credit' ? 'credit_card' : 'bank');
+  function openAdd(type = 'bank') {
 
     setEditing(null);
     setForm({
@@ -599,20 +630,14 @@ export default function Accounts({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-primary">Money</p>
-
           <h2 className="mt-1 font-display text-[34px] font-extrabold tracking-[-0.06em]">
-            {section === 'payment'
-              ? 'Payment Accounts'
-              : 'Credit Cards'}
+            Accounts
           </h2>
-
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            {section === 'payment'
-              ? 'Your bank accounts, cash, wallets, and prepaid balances.'
-              : 'Track limits, outstanding balances, and payment dates.'}
+            Manage all your bank accounts, cash, wallets, and credit cards in one place.
           </p>
         </div>
 
@@ -621,11 +646,7 @@ export default function Accounts({
             onClick={() => setShowClosed((value) => !value)}
             className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-4 text-xs font-bold"
           >
-            {showClosed ? (
-              <EyeOff className="size-4" />
-            ) : (
-              <Eye className="size-4" />
-            )}
+            {showClosed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             {showClosed ? 'Hide closed' : 'Show closed'}
           </button>
 
@@ -634,36 +655,18 @@ export default function Accounts({
             className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground"
           >
             <Plus className="size-4" />
-            {section === 'credit'
-              ? 'Add credit card'
-              : 'Add account'}
+            Add Account
           </button>
         </div>
       </div>
 
-      <div className="flex gap-2 border-b border-border">
-        <button
-          onClick={() => setSection('payment')}
-          className={`border-b-2 px-1 pb-3 text-xs font-bold ${
-            section === 'payment'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground'
-          }`}
-        >
-          Payment Accounts
-        </button>
-
-        <button
-          onClick={() => setSection('credit')}
-          className={`border-b-2 px-1 pb-3 text-xs font-bold ${
-            section === 'credit'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground'
-          }`}
-        >
-          Credit Cards
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => { window.location.href = '/money'; }}
+        className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-foreground"
+      >
+        ← Money Hub
+      </button>
 
       {error && (
         <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -671,39 +674,41 @@ export default function Accounts({
         </div>
       )}
 
-      {!loading && activeAccounts.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {Object.entries(totalsByCurrency).map(
-            ([currency, total]) => (
-              <div
-                key={currency}
-                className="rounded-2xl border border-border bg-card p-5 card-shadow"
-              >
-                <p className="text-xs font-semibold text-muted-foreground">
-                  {section === 'credit'
-                    ? 'Outstanding'
-                    : 'Available balance'}
-                </p>
+      {!loading && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-2xl border border-border bg-card p-4 card-shadow">
+            <p className="text-xs font-semibold text-muted-foreground">Total Accounts</p>
+            <p className="mt-2 font-display text-xl font-bold">{activeAccounts.length}</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">Active accounts</p>
+          </div>
 
-                <p className="mt-2 font-display text-2xl font-bold tracking-[-0.04em]">
-                  {money(
-                    section === 'credit'
-                      ? Math.abs(total)
-                      : total,
-                    currency,
-                  )}
-                </p>
+          <div className="rounded-2xl border border-border bg-card p-4 card-shadow">
+            <p className="text-xs font-semibold text-muted-foreground">Payment Accounts</p>
+            <p className="mt-2 font-display text-xl font-bold">
+              {Object.entries(paymentTotalsByCurrency).length === 1
+                ? money(Object.values(paymentTotalsByCurrency)[0], Object.keys(paymentTotalsByCurrency)[0])
+                : `${paymentActiveAccounts.length} accounts`}
+            </p>
+            <p className="mt-1 text-[11px] text-muted-foreground">Bank, cash, wallets & prepaid</p>
+          </div>
 
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {activeAccounts.filter(
-                    (account) =>
-                      account.currency_code === currency,
-                  ).length}{' '}
-                  active account(s)
-                </p>
-              </div>
-            ),
-          )}
+          <div className="rounded-2xl border border-border bg-card p-4 card-shadow">
+            <p className="text-xs font-semibold text-muted-foreground">Credit Cards</p>
+            <p className="mt-2 font-display text-xl font-bold">
+              {Object.entries(creditTotalsByCurrency).length === 1
+                ? money(Object.values(creditTotalsByCurrency)[0], Object.keys(creditTotalsByCurrency)[0])
+                : `${activeCreditCards.length} cards`}
+            </p>
+            <p className="mt-1 text-[11px] text-muted-foreground">Total outstanding</p>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card p-4 card-shadow">
+            <p className="text-xs font-semibold text-muted-foreground">Currencies</p>
+            <p className="mt-2 font-display text-xl font-bold">{Object.keys(totalsByCurrency).length}</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {Object.keys(totalsByCurrency).join(' · ') || 'No active accounts'}
+            </p>
+          </div>
         </div>
       )}
 
@@ -714,11 +719,7 @@ export default function Accounts({
             className={`${inputClass} pl-10`}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder={
-              section === 'credit'
-                ? 'Search credit cards...'
-                : 'Search accounts...'
-            }
+            placeholder="Search accounts..."
           />
         </div>
 
@@ -733,179 +734,135 @@ export default function Accounts({
 
       {loading ? (
         <div className="rounded-2xl border border-border bg-card px-5 py-14 text-center text-sm text-muted-foreground">
-          Loading...
+          Loading accounts...
         </div>
-      ) : visibleAccounts.length === 0 ? (
+      ) : groupedAccounts.length === 0 ? (
         <div className="rounded-2xl border border-border bg-card p-14 text-center card-shadow">
           <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-secondary">
-            {section === 'credit' ? (
-              <Landmark className="size-5 text-primary" />
-            ) : (
-              <WalletCards className="size-5 text-primary" />
-            )}
+            <WalletCards className="size-5 text-primary" />
           </div>
-
-          <h3 className="mt-4 font-display text-base font-bold">
-            No {section === 'credit' ? 'credit cards' : 'payment accounts'} yet
-          </h3>
-
+          <h3 className="mt-4 font-display text-base font-bold">No accounts found</h3>
           <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-            Add your first one to start tracking balances and transactions.
+            Add your first account to start tracking balances and transactions.
           </p>
-
           <button
             onClick={() => openAdd()}
             className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground"
           >
             <Plus className="size-4" />
-            {section === 'credit'
-              ? 'Add credit card'
-              : 'Add account'}
+            Add Account
           </button>
         </div>
       ) : (
-        <section className="overflow-hidden rounded-2xl border border-border bg-card card-shadow">
-          <div className="divide-y divide-border">
-            {visibleAccounts.map((account) => {
-              const balance = Number(
-                balances[account.id] ?? 0,
-              );
-              const isCredit =
-                account.account_type === 'credit_card';
-              const outstanding = isCredit
-                ? Math.max(0, -balance)
-                : balance;
-              const availableCredit = isCredit
-                ? Math.max(
-                    0,
-                    Number(account.credit_limit ?? 0) -
-                      outstanding,
-                  )
-                : 0;
-              const isClosed = account.status !== 'active';
+        <div className="space-y-5">
+          {groupedAccounts.map((group) => {
+            const groupTotal = group.accounts.reduce((sum, account) => {
+              const balance = Number(balances[account.id] ?? 0);
+              return sum + (account.account_type === 'credit_card' ? Math.max(0, -balance) : balance);
+            }, 0);
+            const groupCurrency = group.accounts.every((account) => account.currency_code === group.accounts[0]?.currency_code)
+              ? group.accounts[0]?.currency_code
+              : null;
 
-              return (
-                <button
-                  key={account.id}
-                  type="button"
-                  onClick={() => setSelectedAccount(account)}
-                  className="flex w-full flex-col gap-4 px-5 py-5 text-left transition-colors hover:bg-muted/40 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-secondary">
-                      {isCredit ? (
-                        <Landmark className="size-5 text-primary" />
-                      ) : (
-                        <WalletCards className="size-5 text-primary" />
-                      )}
-                    </div>
+            return (
+              <section key={group.key}>
+                <div className="mb-2 flex items-center justify-between px-1">
+                  <h3 className="font-display text-base font-bold">{group.label}</h3>
+                  <span className="text-xs text-muted-foreground">
+                    {groupCurrency ? `Total: ${money(groupTotal, groupCurrency)}` : `${group.accounts.length} accounts`}
+                  </span>
+                </div>
 
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="truncate text-sm font-bold">
-                          {account.name}
-                        </h4>
+                <div className="overflow-hidden rounded-2xl border border-border bg-card card-shadow">
+                  <div className="divide-y divide-border">
+                    {group.accounts.map((account) => {
+                      const balance = Number(balances[account.id] ?? 0);
+                      const isCredit = account.account_type === 'credit_card';
+                      const amount = isCredit ? Math.max(0, -balance) : balance;
+                      const availableCredit = isCredit
+                        ? Math.max(0, Number(account.credit_limit ?? 0) - amount)
+                        : 0;
+                      const isClosed = account.status !== 'active';
 
-                        {isClosed && (
-                          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                            Closed
-                          </span>
-                        )}
-                      </div>
-
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {accountTypeLabel(account.account_type)}
-                        {account.bank_name
-                          ? ` · ${account.bank_name}`
-                          : ''}
-                        {account.account_type === 'cash' &&
-                        account.notes
-                          ? ` · ${account.notes}`
-                          : ''}
-                        {account.account_type === 'wallet' &&
-                        account.provider
-                          ? ` · ${account.provider}`
-                          : ''}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-5 sm:justify-end">
-                    <div className="text-left sm:text-right">
-                      {isCredit ? (
-                        <>
-                          <p className="font-display text-base font-bold">
-                            {money(
-                              outstanding,
-                              account.currency_code,
-                            )}
-                          </p>
-
-                          <p className="mt-1 text-[11px] text-muted-foreground">
-                            Outstanding · Available{' '}
-                            {money(
-                              availableCredit,
-                              account.currency_code,
-                            )}
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="font-display text-base font-bold">
-                            {money(
-                              balance,
-                              account.currency_code,
-                            )}
-                          </p>
-
-                          <p className="mt-1 text-[11px] text-muted-foreground">
-                            Current balance
-                          </p>
-                        </>
-                      )}
-                    </div>
-
-                    <div
-                      className="flex gap-1"
-                      onClick={(event) =>
-                        event.stopPropagation()
-                      }
-                    >
-                      <button
-                        type="button"
-                        onClick={() => openEdit(account)}
-                        className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground"
-                        aria-label="Edit account"
-                      >
-                        <Pencil className="size-4" />
-                      </button>
-
-                      {isClosed ? (
-                        <button
-                          type="button"
-                          onClick={() => reopenAccount(account)}
-                          className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted"
-                          aria-label="Reopen account"
+                      return (
+                        <div
+                          key={account.id}
+                          className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
                         >
-                          <Eye className="size-4" />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => closeAccount(account)}
-                          className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          aria-label="Close account"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      )}
-                    </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedAccount(account)}
+                            className="flex min-w-0 items-center gap-3 text-left"
+                          >
+                            <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-secondary">
+                              {isCredit ? <Landmark className="size-5 text-primary" /> : <WalletCards className="size-5 text-primary" />}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h4 className="truncate text-sm font-bold">{account.name}</h4>
+                                {isClosed && (
+                                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">Closed</span>
+                                )}
+                              </div>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {accountTypeLabel(account.account_type)}
+                                {account.bank_name ? ` · ${account.bank_name}` : ''}
+                                {account.account_type === 'cash' && account.notes ? ` · ${account.notes}` : ''}
+                                {(account.account_type === 'wallet' || account.account_type === 'prepaid') && account.provider ? ` · ${account.provider}` : ''}
+                                {` · ${account.currency_code}`}
+                              </p>
+                            </div>
+                          </button>
+
+                          <div className="flex items-center justify-between gap-4 sm:justify-end">
+                            <div className="text-right">
+                              <p className={`font-display text-base font-bold ${isCredit ? 'text-destructive' : ''}`}>
+                                {isCredit ? `- ${money(amount, account.currency_code)}` : money(amount, account.currency_code)}
+                              </p>
+                              <p className="mt-1 text-[11px] text-muted-foreground">
+                                {isCredit ? `Outstanding · Available ${money(availableCredit, account.currency_code)}` : 'Current balance'}
+                              </p>
+                            </div>
+
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => openEdit(account)}
+                                className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground"
+                                aria-label="Edit account"
+                              >
+                                <Pencil className="size-4" />
+                              </button>
+                              {isClosed ? (
+                                <button
+                                  type="button"
+                                  onClick={() => reopenAccount(account)}
+                                  className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted"
+                                  aria-label="Reopen account"
+                                >
+                                  <Eye className="size-4" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => closeAccount(account)}
+                                  className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                  aria-label="Close account"
+                                >
+                                  <Trash2 className="size-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
+                </div>
+              </section>
+            );
+          })}
+        </div>
       )}
 
       {selectedAccount && (
