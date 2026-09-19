@@ -1,15 +1,21 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
+  ArrowDownLeft,
+  ArrowUpRight,
   Eye,
   EyeOff,
   Landmark,
   Pencil,
   Plus,
+  RefreshCw,
+  Search,
   Trash2,
   WalletCards,
   X,
 } from 'lucide-react';
 import { supabase } from '@/lib/services/supabase';
+
+type AccountSection = 'payment' | 'credit';
 
 type Account = {
   id: string;
@@ -27,10 +33,14 @@ type Account = {
 };
 
 type TransactionRow = {
+  id: string;
   account_id: string | null;
-  type: string;
+  type: 'income' | 'expense';
   amount: number;
   currency_code: string;
+  transaction_date: string;
+  description: string | null;
+  notes: string | null;
   status: string;
 };
 
@@ -40,12 +50,31 @@ type AccountForm = {
   currency_code: string;
   opening_balance: string;
   bank_name: string;
+  location: string;
   provider: string;
   credit_limit: string;
   statement_date: string;
   payment_due_date: string;
+  current_outstanding: string;
   notes: string;
 };
+
+const CURRENCIES = [
+  { code: 'EGP', label: 'EGP — Egyptian Pound' },
+  { code: 'USD', label: 'USD — US Dollar' },
+  { code: 'AED', label: 'AED — UAE Dirham' },
+  { code: 'SAR', label: 'SAR — Saudi Riyal' },
+];
+
+const ACCOUNT_TYPES = [
+  { value: 'bank', label: 'Bank Account' },
+  { value: 'cash', label: 'Cash' },
+  { value: 'credit_card', label: 'Credit Card' },
+  { value: 'prepaid', label: 'Prepaid' },
+  { value: 'wallet', label: 'E-Wallet' },
+];
+
+const PAYMENT_TYPES = ['bank', 'cash', 'prepaid', 'wallet'];
 
 const EMPTY_FORM: AccountForm = {
   name: '',
@@ -53,21 +82,17 @@ const EMPTY_FORM: AccountForm = {
   currency_code: 'EGP',
   opening_balance: '0',
   bank_name: '',
+  location: '',
   provider: '',
   credit_limit: '',
   statement_date: '',
   payment_due_date: '',
+  current_outstanding: '0',
   notes: '',
 };
 
-const ACCOUNT_TYPES = [
-  ['bank', 'Bank Account'],
-  ['cash', 'Cash'],
-  ['credit_card', 'Credit Card'],
-  ['prepaid', 'Prepaid'],
-  ['wallet', 'E-Wallet'],
-  ['investment_cash', 'Investment Cash'],
-];
+const inputClass =
+  'h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/10';
 
 function money(value: number, currency: string) {
   try {
@@ -83,23 +108,49 @@ function money(value: number, currency: string) {
 
 function accountTypeLabel(value: string) {
   return (
-    ACCOUNT_TYPES.find(([type]) => type === value)?.[1] ?? value
+    ACCOUNT_TYPES.find((item) => item.value === value)?.label ??
+    value
   );
 }
 
-const inputClass =
-  'h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/10';
+function formatDate(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
 
-export default function Accounts() {
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+}
+
+export default function Accounts({
+  initialSection = 'payment',
+}: {
+  initialSection?: AccountSection;
+}) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
+  const [section, setSection] =
+    useState<AccountSection>(initialSection);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
   const [form, setForm] = useState<AccountForm>(EMPTY_FORM);
+
   const [showClosed, setShowClosed] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const [selectedAccount, setSelectedAccount] =
+    useState<Account | null>(null);
+
+  useEffect(() => {
+    setSection(initialSection);
+  }, [initialSection]);
 
   async function loadData() {
     setLoading(true);
@@ -116,21 +167,25 @@ export default function Accounts() {
       return;
     }
 
-    const [accountsResult, transactionsResult] = await Promise.all([
-      supabase
-        .from('accounts')
-        .select(
-          'id, name, account_type, currency_code, bank_name, provider, opening_balance, credit_limit, statement_date, payment_due_date, status, notes',
-        )
-        .eq('user_id', user.id)
-        .order('name'),
+    const [accountsResult, transactionsResult] =
+      await Promise.all([
+        supabase
+          .from('accounts')
+          .select(
+            'id, name, account_type, currency_code, bank_name, provider, opening_balance, credit_limit, statement_date, payment_due_date, status, notes',
+          )
+          .eq('user_id', user.id)
+          .order('name'),
 
-      supabase
-        .from('transactions')
-        .select('account_id, type, amount, currency_code, status')
-        .eq('user_id', user.id)
-        .in('type', ['income', 'expense']),
-    ]);
+        supabase
+          .from('transactions')
+          .select(
+            'id, account_id, type, amount, currency_code, transaction_date, description, notes, status',
+          )
+          .eq('user_id', user.id)
+          .in('type', ['income', 'expense'])
+          .order('transaction_date', { ascending: false }),
+      ]);
 
     if (accountsResult.error) {
       setError(accountsResult.error.message);
@@ -155,14 +210,6 @@ export default function Accounts() {
     loadData();
   }, []);
 
-  const visibleAccounts = useMemo(
-    () =>
-      showClosed
-        ? accounts
-        : accounts.filter((account) => account.status === 'active'),
-    [accounts, showClosed],
-  );
-
   const balances = useMemo(() => {
     const result: Record<string, number> = {};
 
@@ -179,9 +226,7 @@ export default function Accounts() {
 
       if (transaction.type === 'income') {
         result[transaction.account_id] += amount;
-      }
-
-      if (transaction.type === 'expense') {
+      } else if (transaction.type === 'expense') {
         result[transaction.account_id] -= amount;
       }
     }
@@ -189,9 +234,51 @@ export default function Accounts() {
     return result;
   }, [accounts, transactions]);
 
-  const activeAccounts = useMemo(
-    () => accounts.filter((account) => account.status === 'active'),
+  const paymentAccounts = useMemo(
+    () =>
+      accounts.filter((account) =>
+        PAYMENT_TYPES.includes(account.account_type),
+      ),
     [accounts],
+  );
+
+  const creditCards = useMemo(
+    () =>
+      accounts.filter(
+        (account) => account.account_type === 'credit_card',
+      ),
+    [accounts],
+  );
+
+  const activeList = section === 'payment'
+    ? paymentAccounts
+    : creditCards;
+
+  const visibleAccounts = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    return activeList.filter((account) => {
+      if (!showClosed && account.status !== 'active') {
+        return false;
+      }
+
+      if (!normalizedSearch) return true;
+
+      return [
+        account.name,
+        account.bank_name,
+        account.provider,
+        account.currency_code,
+      ]
+        .filter(Boolean)
+        .some((value) =>
+          String(value).toLowerCase().includes(normalizedSearch),
+        );
+    });
+  }, [activeList, search, showClosed]);
+
+  const activeAccounts = activeList.filter(
+    (account) => account.status === 'active',
   );
 
   const totalsByCurrency = useMemo(() => {
@@ -206,33 +293,71 @@ export default function Accounts() {
     return result;
   }, [activeAccounts, balances]);
 
-  const totalOpeningByCurrency = useMemo(() => {
-    const result: Record<string, number> = {};
+  const selectedTransactions = useMemo(() => {
+    if (!selectedAccount) return [];
 
-    for (const account of activeAccounts) {
-      result[account.currency_code] =
-        (result[account.currency_code] ?? 0) +
-        Number(account.opening_balance || 0);
+    return transactions
+      .filter(
+        (transaction) =>
+          transaction.account_id === selectedAccount.id,
+      )
+      .sort((a, b) =>
+        b.transaction_date.localeCompare(a.transaction_date),
+      );
+  }, [selectedAccount, transactions]);
+
+  const selectedSummary = useMemo(() => {
+    if (!selectedAccount) {
+      return {
+        income: 0,
+        expenses: 0,
+      };
     }
 
-    return result;
-  }, [activeAccounts]);
+    return selectedTransactions.reduce(
+      (summary, transaction) => {
+        if (transaction.status !== 'completed') return summary;
 
-  function openAdd() {
+        if (transaction.type === 'income') {
+          summary.income += Number(transaction.amount || 0);
+        } else {
+          summary.expenses += Number(transaction.amount || 0);
+        }
+
+        return summary;
+      },
+      { income: 0, expenses: 0 },
+    );
+  }, [selectedAccount, selectedTransactions]);
+
+  function openAdd(type?: string) {
+    const nextType =
+      type ??
+      (section === 'credit' ? 'credit_card' : 'bank');
+
     setEditing(null);
-    setForm(EMPTY_FORM);
+    setForm({
+      ...EMPTY_FORM,
+      account_type: nextType,
+      currency_code: 'EGP',
+    });
     setError('');
     setModalOpen(true);
   }
 
   function openEdit(account: Account) {
+    const isCredit = account.account_type === 'credit_card';
+
     setEditing(account);
     setForm({
       name: account.name,
       account_type: account.account_type,
       currency_code: account.currency_code,
-      opening_balance: String(account.opening_balance ?? 0),
+      opening_balance: isCredit
+        ? '0'
+        : String(account.opening_balance ?? 0),
       bank_name: account.bank_name ?? '',
+      location: account.notes ?? '',
       provider: account.provider ?? '',
       credit_limit:
         account.credit_limit == null
@@ -246,8 +371,12 @@ export default function Accounts() {
         account.payment_due_date == null
           ? ''
           : String(account.payment_due_date),
+      current_outstanding: isCredit
+        ? String(Math.max(0, -(balances[account.id] ?? 0)))
+        : '0',
       notes: account.notes ?? '',
     });
+
     setError('');
     setModalOpen(true);
   }
@@ -267,23 +396,50 @@ export default function Accounts() {
       return;
     }
 
-    const openingBalance = Number(form.opening_balance);
+    const isCredit = form.account_type === 'credit_card';
+
+    const openingBalance = Number(
+      isCredit ? -(Number(form.current_outstanding) || 0) : form.opening_balance,
+    );
 
     if (!Number.isFinite(openingBalance)) {
       setError('Opening balance must be a valid number.');
       return;
     }
 
-    const creditLimit =
-      form.credit_limit.trim() === ''
-        ? null
-        : Number(form.credit_limit);
+    const creditLimit = isCredit
+      ? Number(form.credit_limit)
+      : null;
 
     if (
-      creditLimit !== null &&
+      isCredit &&
       (!Number.isFinite(creditLimit) || creditLimit < 0)
     ) {
       setError('Credit limit must be zero or greater.');
+      return;
+    }
+
+    const currentOutstanding = isCredit
+      ? Number(form.current_outstanding)
+      : 0;
+
+    if (
+      isCredit &&
+      (!Number.isFinite(currentOutstanding) ||
+        currentOutstanding < 0)
+    ) {
+      setError('Current outstanding must be zero or greater.');
+      return;
+    }
+
+    if (
+      isCredit &&
+      creditLimit !== null &&
+      currentOutstanding > creditLimit
+    ) {
+      setError(
+        'Current outstanding cannot be greater than the credit limit.',
+      );
       return;
     }
 
@@ -298,6 +454,7 @@ export default function Accounts() {
         : Number(form.payment_due_date);
 
     if (
+      isCredit &&
       statementDate !== null &&
       (!Number.isInteger(statementDate) ||
         statementDate < 1 ||
@@ -308,20 +465,13 @@ export default function Accounts() {
     }
 
     if (
+      isCredit &&
       paymentDueDate !== null &&
       (!Number.isInteger(paymentDueDate) ||
         paymentDueDate < 1 ||
         paymentDueDate > 31)
     ) {
       setError('Payment due day must be between 1 and 31.');
-      return;
-    }
-
-    if (
-      form.account_type === 'credit_card' &&
-      creditLimit === null
-    ) {
-      setError('Please enter a credit limit for a credit card.');
       return;
     }
 
@@ -341,14 +491,20 @@ export default function Accounts() {
     const payload = {
       name: form.name.trim(),
       account_type: form.account_type,
-      currency_code: form.currency_code.trim().toUpperCase(),
+      currency_code: form.currency_code,
       opening_balance: openingBalance,
       bank_name: form.bank_name.trim() || null,
-      provider: form.provider.trim() || null,
+      provider:
+        form.account_type === 'wallet' && form.provider.trim()
+          ? form.provider.trim()
+          : null,
       credit_limit: creditLimit,
-      statement_date: statementDate,
-      payment_due_date: paymentDueDate,
-      notes: form.notes.trim() || null,
+      statement_date: isCredit ? statementDate : null,
+      payment_due_date: isCredit ? paymentDueDate : null,
+      notes:
+        form.account_type === 'cash'
+          ? form.location.trim() || form.notes.trim() || null
+          : form.notes.trim() || null,
     };
 
     const result = editing
@@ -386,7 +542,7 @@ export default function Accounts() {
     const confirmed = window.confirm(
       accountBalance !== 0
         ? `"${account.name}" still has a balance of ${money(
-            accountBalance,
+            Math.abs(accountBalance),
             account.currency_code,
           )}. Close it anyway?`
         : `Close "${account.name}"?`,
@@ -441,23 +597,22 @@ export default function Accounts() {
     await loadData();
   }
 
-  const currencySummary = Object.entries(totalsByCurrency);
-  const openingSummary = Object.entries(totalOpeningByCurrency);
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="text-sm font-semibold text-primary">
-            Money
-          </p>
+          <p className="text-sm font-semibold text-primary">Money</p>
 
           <h2 className="mt-1 font-display text-[34px] font-extrabold tracking-[-0.06em]">
-            Accounts
+            {section === 'payment'
+              ? 'Payment Accounts'
+              : 'Credit Cards'}
           </h2>
 
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Manage the places where your money lives.
+            {section === 'payment'
+              ? 'Your bank accounts, cash, wallets, and prepaid balances.'
+              : 'Track limits, outstanding balances, and payment dates.'}
           </p>
         </div>
 
@@ -475,13 +630,39 @@ export default function Accounts() {
           </button>
 
           <button
-            onClick={openAdd}
+            onClick={() => openAdd()}
             className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground"
           >
             <Plus className="size-4" />
-            Add account
+            {section === 'credit'
+              ? 'Add credit card'
+              : 'Add account'}
           </button>
         </div>
+      </div>
+
+      <div className="flex gap-2 border-b border-border">
+        <button
+          onClick={() => setSection('payment')}
+          className={`border-b-2 px-1 pb-3 text-xs font-bold ${
+            section === 'payment'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground'
+          }`}
+        >
+          Payment Accounts
+        </button>
+
+        <button
+          onClick={() => setSection('credit')}
+          className={`border-b-2 px-1 pb-3 text-xs font-bold ${
+            section === 'credit'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground'
+          }`}
+        >
+          Credit Cards
+        </button>
       </div>
 
       {error && (
@@ -492,105 +673,127 @@ export default function Accounts() {
 
       {!loading && activeAccounts.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {currencySummary.map(([currency, total]) => (
-            <div
-              key={currency}
-              className="rounded-2xl border border-border bg-card p-5 card-shadow"
-            >
-              <p className="text-xs font-semibold text-muted-foreground">
-                Current balance
-              </p>
+          {Object.entries(totalsByCurrency).map(
+            ([currency, total]) => (
+              <div
+                key={currency}
+                className="rounded-2xl border border-border bg-card p-5 card-shadow"
+              >
+                <p className="text-xs font-semibold text-muted-foreground">
+                  {section === 'credit'
+                    ? 'Outstanding'
+                    : 'Available balance'}
+                </p>
 
-              <p className="mt-2 font-display text-2xl font-bold tracking-[-0.04em]">
-                {money(total, currency)}
-              </p>
+                <p className="mt-2 font-display text-2xl font-bold tracking-[-0.04em]">
+                  {money(
+                    section === 'credit'
+                      ? Math.abs(total)
+                      : total,
+                    currency,
+                  )}
+                </p>
 
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                {activeAccounts.filter(
-                  (account) => account.currency_code === currency,
-                ).length}{' '}
-                active account(s)
-              </p>
-            </div>
-          ))}
-
-          {openingSummary.map(([currency, total]) => (
-            <div
-              key={`opening-${currency}`}
-              className="rounded-2xl border border-dashed border-border bg-background p-5"
-            >
-              <p className="text-xs font-semibold text-muted-foreground">
-                Opening balance
-              </p>
-
-              <p className="mt-2 font-display text-2xl font-bold tracking-[-0.04em]">
-                {money(total, currency)}
-              </p>
-
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Before recorded income and expenses
-              </p>
-            </div>
-          ))}
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {activeAccounts.filter(
+                    (account) =>
+                      account.currency_code === currency,
+                  ).length}{' '}
+                  active account(s)
+                </p>
+              </div>
+            ),
+          )}
         </div>
       )}
 
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            className={`${inputClass} pl-10`}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={
+              section === 'credit'
+                ? 'Search credit cards...'
+                : 'Search accounts...'
+            }
+          />
+        </div>
+
+        <button
+          onClick={loadData}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-border px-4 text-xs font-bold"
+        >
+          <RefreshCw className="size-4" />
+          Refresh
+        </button>
+      </div>
+
       {loading ? (
         <div className="rounded-2xl border border-border bg-card px-5 py-14 text-center text-sm text-muted-foreground">
-          Loading accounts...
+          Loading...
         </div>
       ) : visibleAccounts.length === 0 ? (
         <div className="rounded-2xl border border-border bg-card p-14 text-center card-shadow">
           <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-secondary">
-            <WalletCards className="size-5 text-primary" />
+            {section === 'credit' ? (
+              <Landmark className="size-5 text-primary" />
+            ) : (
+              <WalletCards className="size-5 text-primary" />
+            )}
           </div>
 
           <h3 className="mt-4 font-display text-base font-bold">
-            {showClosed
-              ? 'No accounts yet'
-              : 'No active accounts'}
+            No {section === 'credit' ? 'credit cards' : 'payment accounts'} yet
           </h3>
 
           <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-            {showClosed
-              ? 'Add your first account to begin building your money view.'
-              : 'Add an account or show closed accounts to review your existing accounts.'}
+            Add your first one to start tracking balances and transactions.
           </p>
 
           <button
-            onClick={openAdd}
+            onClick={() => openAdd()}
             className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground"
           >
             <Plus className="size-4" />
-            Add account
+            {section === 'credit'
+              ? 'Add credit card'
+              : 'Add account'}
           </button>
         </div>
       ) : (
         <section className="overflow-hidden rounded-2xl border border-border bg-card card-shadow">
-          <div className="border-b border-border px-5 py-4">
-            <h3 className="font-display text-sm font-bold">
-              Your accounts
-            </h3>
-
-            <p className="mt-1 text-xs text-muted-foreground">
-              {visibleAccounts.length}{' '}
-              {showClosed ? 'account(s)' : 'active account(s)'}
-            </p>
-          </div>
-
           <div className="divide-y divide-border">
             {visibleAccounts.map((account) => {
-              const balance = Number(balances[account.id] ?? 0);
+              const balance = Number(
+                balances[account.id] ?? 0,
+              );
+              const isCredit =
+                account.account_type === 'credit_card';
+              const outstanding = isCredit
+                ? Math.max(0, -balance)
+                : balance;
+              const availableCredit = isCredit
+                ? Math.max(
+                    0,
+                    Number(account.credit_limit ?? 0) -
+                      outstanding,
+                  )
+                : 0;
               const isClosed = account.status !== 'active';
 
               return (
-                <div
+                <button
                   key={account.id}
-                  className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between"
+                  type="button"
+                  onClick={() => setSelectedAccount(account)}
+                  className="flex w-full flex-col gap-4 px-5 py-5 text-left transition-colors hover:bg-muted/40 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-secondary">
-                      {account.account_type === 'bank' ? (
+                      {isCredit ? (
                         <Landmark className="size-5 text-primary" />
                       ) : (
                         <WalletCards className="size-5 text-primary" />
@@ -615,48 +818,61 @@ export default function Accounts() {
                         {account.bank_name
                           ? ` · ${account.bank_name}`
                           : ''}
-                        {account.provider
+                        {account.account_type === 'cash' &&
+                        account.notes
+                          ? ` · ${account.notes}`
+                          : ''}
+                        {account.account_type === 'wallet' &&
+                        account.provider
                           ? ` · ${account.provider}`
                           : ''}
                       </p>
-
-                      {account.account_type === 'credit_card' && (
-                        <p className="mt-1 text-[10px] text-muted-foreground">
-                          {account.credit_limit != null
-                            ? `Limit: ${money(
-                                Number(account.credit_limit),
-                                account.currency_code,
-                              )}`
-                            : 'Credit limit not set'}
-                          {account.payment_due_date
-                            ? ` · Due day: ${account.payment_due_date}`
-                            : ''}
-                        </p>
-                      )}
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between gap-5 sm:justify-end">
                     <div className="text-left sm:text-right">
-                      <p className="font-display text-base font-bold">
-                        {money(balance, account.currency_code)}
-                      </p>
+                      {isCredit ? (
+                        <>
+                          <p className="font-display text-base font-bold">
+                            {money(
+                              outstanding,
+                              account.currency_code,
+                            )}
+                          </p>
 
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        Current balance
-                      </p>
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            Outstanding · Available{' '}
+                            {money(
+                              availableCredit,
+                              account.currency_code,
+                            )}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-display text-base font-bold">
+                            {money(
+                              balance,
+                              account.currency_code,
+                            )}
+                          </p>
 
-                      <p className="text-[10px] text-muted-foreground">
-                        Opening:{' '}
-                        {money(
-                          Number(account.opening_balance || 0),
-                          account.currency_code,
-                        )}
-                      </p>
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            Current balance
+                          </p>
+                        </>
+                      )}
                     </div>
 
-                    <div className="flex gap-1">
+                    <div
+                      className="flex gap-1"
+                      onClick={(event) =>
+                        event.stopPropagation()
+                      }
+                    >
                       <button
+                        type="button"
                         onClick={() => openEdit(account)}
                         className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground"
                         aria-label="Edit account"
@@ -666,30 +882,260 @@ export default function Accounts() {
 
                       {isClosed ? (
                         <button
+                          type="button"
                           onClick={() => reopenAccount(account)}
-                          className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground"
+                          className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted"
                           aria-label="Reopen account"
-                          title="Reopen account"
                         >
                           <Eye className="size-4" />
                         </button>
                       ) : (
                         <button
+                          type="button"
                           onClick={() => closeAccount(account)}
                           className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                           aria-label="Close account"
-                          title="Close account"
                         >
                           <Trash2 className="size-4" />
                         </button>
                       )}
                     </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
         </section>
+      )}
+
+      {selectedAccount && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center">
+          <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-border bg-card shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-5 py-4">
+              <div>
+                <p className="text-xs font-semibold text-primary">
+                  Account details
+                </p>
+
+                <h3 className="font-display text-lg font-bold">
+                  {selectedAccount.name}
+                </h3>
+              </div>
+
+              <button
+                onClick={() => setSelectedAccount(null)}
+                className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted"
+                aria-label="Close"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <div className="space-y-5 p-5">
+              {(() => {
+                const balance = Number(
+                  balances[selectedAccount.id] ?? 0,
+                );
+                const isCredit =
+                  selectedAccount.account_type === 'credit_card';
+                const outstanding = isCredit
+                  ? Math.max(0, -balance)
+                  : balance;
+                const availableCredit = isCredit
+                  ? Math.max(
+                      0,
+                      Number(
+                        selectedAccount.credit_limit ?? 0,
+                      ) - outstanding,
+                    )
+                  : 0;
+
+                return (
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-2xl border border-border p-4">
+                        <p className="text-[11px] font-semibold text-muted-foreground">
+                          {isCredit
+                            ? 'Outstanding'
+                            : 'Current balance'}
+                        </p>
+
+                        <p className="mt-2 font-display text-xl font-bold">
+                          {money(
+                            isCredit
+                              ? outstanding
+                              : balance,
+                            selectedAccount.currency_code,
+                          )}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-border p-4">
+                        <p className="text-[11px] font-semibold text-muted-foreground">
+                          Total income
+                        </p>
+
+                        <p className="mt-2 font-display text-xl font-bold">
+                          {money(
+                            selectedSummary.income,
+                            selectedAccount.currency_code,
+                          )}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-border p-4">
+                        <p className="text-[11px] font-semibold text-muted-foreground">
+                          Total expenses
+                        </p>
+
+                        <p className="mt-2 font-display text-xl font-bold">
+                          {money(
+                            selectedSummary.expenses,
+                            selectedAccount.currency_code,
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    {isCredit && (
+                      <div className="rounded-2xl border border-border bg-secondary/40 p-4">
+                        <div className="flex flex-wrap gap-5 text-xs">
+                          <span>
+                            Credit limit:{' '}
+                            <strong>
+                              {money(
+                                Number(
+                                  selectedAccount.credit_limit ?? 0,
+                                ),
+                                selectedAccount.currency_code,
+                              )}
+                            </strong>
+                          </span>
+
+                          <span>
+                            Available:{' '}
+                            <strong>
+                              {money(
+                                availableCredit,
+                                selectedAccount.currency_code,
+                              )}
+                            </strong>
+                          </span>
+
+                          {selectedAccount.statement_date && (
+                            <span>
+                              Statement day:{' '}
+                              <strong>
+                                {selectedAccount.statement_date}
+                              </strong>
+                            </span>
+                          )}
+
+                          {selectedAccount.payment_due_date && (
+                            <span>
+                              Due day:{' '}
+                              <strong>
+                                {selectedAccount.payment_due_date}
+                              </strong>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 className="font-display text-base font-bold">
+                    Transactions
+                  </h4>
+
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Only transactions belonging to this account.
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => openEdit(selectedAccount)}
+                    className="inline-flex h-9 items-center gap-2 rounded-xl border border-border px-3 text-xs font-bold"
+                  >
+                    <Pencil className="size-3.5" />
+                    Edit
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      window.location.href =
+                        `/expenses?account=${selectedAccount.id}`;
+                    }}
+                    className="inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-3 text-xs font-bold text-primary-foreground"
+                  >
+                    <Plus className="size-3.5" />
+                    Add transaction
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-border">
+                {selectedTransactions.length === 0 ? (
+                  <div className="px-5 py-12 text-center text-sm text-muted-foreground">
+                    No transactions for this account yet.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {selectedTransactions.map(
+                      (transaction) => (
+                        <div
+                          key={transaction.id}
+                          className="grid gap-3 px-4 py-4 sm:grid-cols-[1fr_auto_auto] sm:items-center"
+                        >
+                          <div>
+                            <p className="text-sm font-semibold">
+                              {transaction.description ||
+                                'Untitled transaction'}
+                            </p>
+
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              {formatDate(
+                                transaction.transaction_date,
+                              )}
+                              {' · '}
+                              {transaction.status}
+                            </p>
+                          </div>
+
+                          <span
+                            className={`inline-flex items-center gap-1 text-xs font-bold ${
+                              transaction.type === 'income'
+                                ? 'text-primary'
+                                : 'text-destructive'
+                            }`}
+                          >
+                            {transaction.type === 'income' ? (
+                              <ArrowDownLeft className="size-3.5" />
+                            ) : (
+                              <ArrowUpRight className="size-3.5" />
+                            )}
+                            {transaction.type === 'income'
+                              ? '+'
+                              : '-'}
+                            {money(
+                              Number(transaction.amount),
+                              transaction.currency_code,
+                            )}
+                          </span>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {modalOpen && (
@@ -702,7 +1148,11 @@ export default function Accounts() {
                 </p>
 
                 <h3 className="font-display text-lg font-bold">
-                  {editing ? 'Edit account' : 'Add account'}
+                  {editing
+                    ? 'Edit account'
+                    : form.account_type === 'credit_card'
+                      ? 'Add credit card'
+                      : 'Add account'}
                 </h3>
               </div>
 
@@ -721,13 +1171,18 @@ export default function Accounts() {
                   <span className="mb-2 block text-xs font-bold">
                     Account name *
                   </span>
+
                   <input
                     className={inputClass}
                     value={form.name}
-                    onChange={(e) =>
-                      update('name', e.target.value)
+                    onChange={(event) =>
+                      update('name', event.target.value)
                     }
-                    placeholder="CIB Current Account"
+                    placeholder={
+                      form.account_type === 'credit_card'
+                        ? 'CIB Visa'
+                        : 'CIB Current Account'
+                    }
                     required
                   />
                 </label>
@@ -736,168 +1191,280 @@ export default function Accounts() {
                   <span className="mb-2 block text-xs font-bold">
                     Account type *
                   </span>
+
                   <select
                     className={inputClass}
                     value={form.account_type}
-                    onChange={(e) =>
-                      update('account_type', e.target.value)
-                    }
+                    onChange={(event) => {
+                      const nextType =
+                        event.target.value;
+
+                      setForm((current) => ({
+                        ...current,
+                        account_type: nextType,
+                        opening_balance:
+                          nextType === 'credit_card'
+                            ? '0'
+                            : current.opening_balance,
+                        current_outstanding:
+                          nextType === 'credit_card'
+                            ? current.current_outstanding
+                            : '0',
+                      }));
+                    }}
                   >
-                    {ACCOUNT_TYPES.map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
+                    {ACCOUNT_TYPES.map((item) => (
+                      <option
+                        key={item.value}
+                        value={item.value}
+                      >
+                        {item.label}
                       </option>
                     ))}
                   </select>
                 </label>
 
+                {form.account_type === 'bank' && (
+                  <label>
+                    <span className="mb-2 block text-xs font-bold">
+                      Bank / Institution *
+                    </span>
+
+                    <input
+                      className={inputClass}
+                      value={form.bank_name}
+                      onChange={(event) =>
+                        update(
+                          'bank_name',
+                          event.target.value,
+                        )
+                      }
+                      placeholder="CIB"
+                      required
+                    />
+                  </label>
+                )}
+
+                {form.account_type === 'cash' && (
+                  <label>
+                    <span className="mb-2 block text-xs font-bold">
+                      Location / Wallet Name *
+                    </span>
+
+                    <input
+                      className={inputClass}
+                      value={form.location}
+                      onChange={(event) =>
+                        update(
+                          'location',
+                          event.target.value,
+                        )
+                      }
+                      placeholder="Home cash"
+                      required
+                    />
+                  </label>
+                )}
+
+                {form.account_type === 'wallet' && (
+                  <label>
+                    <span className="mb-2 block text-xs font-bold">
+                      Provider *
+                    </span>
+
+                    <input
+                      className={inputClass}
+                      value={form.provider}
+                      onChange={(event) =>
+                        update(
+                          'provider',
+                          event.target.value,
+                        )
+                      }
+                      placeholder="Vodafone Cash"
+                      required
+                    />
+                  </label>
+                )}
+
+                {form.account_type === 'credit_card' && (
+                  <label>
+                    <span className="mb-2 block text-xs font-bold">
+                      Bank / Provider *
+                    </span>
+
+                    <input
+                      className={inputClass}
+                      value={form.bank_name}
+                      onChange={(event) =>
+                        update(
+                          'bank_name',
+                          event.target.value,
+                        )
+                      }
+                      placeholder="CIB"
+                      required
+                    />
+                  </label>
+                )}
+
                 <label>
                   <span className="mb-2 block text-xs font-bold">
                     Currency *
                   </span>
-                  <input
+
+                  <select
                     className={inputClass}
                     value={form.currency_code}
-                    onChange={(e) =>
+                    onChange={(event) =>
                       update(
                         'currency_code',
-                        e.target.value.toUpperCase(),
+                        event.target.value,
                       )
                     }
-                    maxLength={3}
-                    required
-                  />
+                  >
+                    {CURRENCIES.map((currency) => (
+                      <option
+                        key={currency.code}
+                        value={currency.code}
+                      >
+                        {currency.label}
+                      </option>
+                    ))}
+                  </select>
+
                   <span className="mt-1 block text-[10px] text-muted-foreground">
-                    Example: EGP, USD, SAR
+                    More currencies can be added later from Settings.
                   </span>
                 </label>
 
-                <label>
-                  <span className="mb-2 block text-xs font-bold">
-                    Opening balance
-                  </span>
-                  <input
-                    className={inputClass}
-                    type="number"
-                    step="0.01"
-                    value={form.opening_balance}
-                    onChange={(e) =>
-                      update('opening_balance', e.target.value)
-                    }
-                  />
-                </label>
+                {form.account_type !== 'credit_card' && (
+                  <label>
+                    <span className="mb-2 block text-xs font-bold">
+                      Opening balance
+                    </span>
 
-                <label>
-                  <span className="mb-2 block text-xs font-bold">
-                    Bank / Institution
-                  </span>
-                  <input
-                    className={inputClass}
-                    value={form.bank_name}
-                    onChange={(e) =>
-                      update('bank_name', e.target.value)
-                    }
-                    placeholder="CIB"
-                  />
-                </label>
+                    <input
+                      className={inputClass}
+                      type="number"
+                      step="0.01"
+                      value={form.opening_balance}
+                      onChange={(event) =>
+                        update(
+                          'opening_balance',
+                          event.target.value,
+                        )
+                      }
+                    />
+                  </label>
+                )}
 
-                <label>
-                  <span className="mb-2 block text-xs font-bold">
-                    Provider
-                  </span>
-                  <input
-                    className={inputClass}
-                    value={form.provider}
-                    onChange={(e) =>
-                      update('provider', e.target.value)
-                    }
-                    placeholder="Thndr, Tilda, Vodafone..."
-                  />
-                </label>
+                {form.account_type === 'credit_card' && (
+                  <>
+                    <label>
+                      <span className="mb-2 block text-xs font-bold">
+                        Credit limit *
+                      </span>
 
-                <label>
-                  <span className="mb-2 block text-xs font-bold">
-                    Credit limit
-                  </span>
-                  <input
-                    className={inputClass}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.credit_limit}
-                    onChange={(e) =>
-                      update('credit_limit', e.target.value)
-                    }
-                    placeholder={
-                      form.account_type === 'credit_card'
-                        ? 'Required for credit cards'
-                        : 'Optional'
-                    }
-                  />
-                </label>
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.credit_limit}
+                        onChange={(event) =>
+                          update(
+                            'credit_limit',
+                            event.target.value,
+                          )
+                        }
+                        placeholder="50,000"
+                        required
+                      />
+                    </label>
 
-                <label>
-                  <span className="mb-2 block text-xs font-bold">
-                    Statement day
-                  </span>
-                  <input
-                    className={inputClass}
-                    type="number"
-                    min="1"
-                    max="31"
-                    step="1"
-                    value={form.statement_date}
-                    onChange={(e) =>
-                      update('statement_date', e.target.value)
-                    }
-                    placeholder="1 - 31"
-                  />
-                </label>
+                    <label>
+                      <span className="mb-2 block text-xs font-bold">
+                        Current outstanding
+                      </span>
 
-                <label>
-                  <span className="mb-2 block text-xs font-bold">
-                    Payment due day
-                  </span>
-                  <input
-                    className={inputClass}
-                    type="number"
-                    min="1"
-                    max="31"
-                    step="1"
-                    value={form.payment_due_date}
-                    onChange={(e) =>
-                      update(
-                        'payment_due_date',
-                        e.target.value,
-                      )
-                    }
-                    placeholder="1 - 31"
-                  />
-                </label>
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.current_outstanding}
+                        onChange={(event) =>
+                          update(
+                            'current_outstanding',
+                            event.target.value,
+                          )
+                        }
+                        placeholder="0"
+                      />
+                    </label>
+
+                    <label>
+                      <span className="mb-2 block text-xs font-bold">
+                        Statement day
+                      </span>
+
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min="1"
+                        max="31"
+                        step="1"
+                        value={form.statement_date}
+                        onChange={(event) =>
+                          update(
+                            'statement_date',
+                            event.target.value,
+                          )
+                        }
+                        placeholder="1 - 31"
+                      />
+                    </label>
+
+                    <label>
+                      <span className="mb-2 block text-xs font-bold">
+                        Payment due day
+                      </span>
+
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min="1"
+                        max="31"
+                        step="1"
+                        value={form.payment_due_date}
+                        onChange={(event) =>
+                          update(
+                            'payment_due_date',
+                            event.target.value,
+                          )
+                        }
+                        placeholder="1 - 31"
+                      />
+                    </label>
+                  </>
+                )}
 
                 <label className="sm:col-span-2">
                   <span className="mb-2 block text-xs font-bold">
                     Notes
                   </span>
+
                   <textarea
                     className={`${inputClass} min-h-24 py-3`}
                     value={form.notes}
-                    onChange={(e) =>
-                      update('notes', e.target.value)
+                    onChange={(event) =>
+                      update('notes', event.target.value)
                     }
                     placeholder="Optional notes..."
                   />
                 </label>
               </div>
-
-              {form.account_type === 'credit_card' && (
-                <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-xs leading-5 text-muted-foreground">
-                  Credit card purchases will later be treated as
-                  liabilities, while payments to the card will be
-                  recorded as transfers. We will connect this fully
-                  when Transfers and Liabilities are completed.
-                </div>
-              )}
 
               {error && (
                 <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -923,7 +1490,7 @@ export default function Accounts() {
                     ? 'Saving...'
                     : editing
                       ? 'Save changes'
-                      : 'Create account'}
+                      : 'Create'}
                 </button>
               </div>
             </form>
