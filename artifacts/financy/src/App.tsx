@@ -564,7 +564,7 @@ function Dashboard() {
         return;
       }
 
-      const [accountsResult, transactionsResult] = await Promise.all([
+      const [accountsResult, transactionsResult, transfersResult] = await Promise.all([
         supabase
           .from('accounts')
           .select('id, opening_balance, currency_code, status')
@@ -580,12 +580,19 @@ function Dashboard() {
           .in('type', ['income', 'expense'])
           .order('transaction_date', { ascending: false })
           .limit(8),
+
+        supabase
+          .from('transfers')
+          .select('from_account_id, to_account_id, amount, received_amount, transfer_date, status')
+          .eq('user_id', user.id)
+          .eq('status', 'completed'),
       ]);
 
       if (!mounted) return;
 
       const accountRows = accountsResult.data ?? [];
       const transactionRows = transactionsResult.data ?? [];
+      const transferRows = transfersResult.data ?? [];
 
       let egpCash = 0;
 
@@ -621,6 +628,22 @@ function Dashboard() {
         ) {
           if (transaction.type === 'income') monthIncome += amount;
           if (transaction.type === 'expense') monthExpenses += amount;
+        }
+      }
+
+      const accountCurrencyById = new Map(
+        accountRows.map((account) => [account.id, account.currency_code]),
+      );
+
+      for (const transfer of transferRows) {
+        const fromCurrency = accountCurrencyById.get(transfer.from_account_id);
+        const toCurrency = accountCurrencyById.get(transfer.to_account_id);
+
+        if (fromCurrency === 'EGP') {
+          egpCash -= Number(transfer.amount ?? 0);
+        }
+        if (toCurrency === 'EGP') {
+          egpCash += Number(transfer.received_amount ?? 0);
         }
       }
 
