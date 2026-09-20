@@ -53,6 +53,7 @@ type TransactionForm = {
   transaction_date: string;
   payee: string;
   payment_method: string;
+  tag: string;
   notes: string;
 };
 
@@ -64,6 +65,7 @@ const EMPTY_FORM: TransactionForm = {
   transaction_date: new Date().toISOString().slice(0, 10),
   payee: '',
   payment_method: '',
+  tag: '',
   notes: '',
 };
 
@@ -106,15 +108,17 @@ function getDisplayNotes(notes: string | null) {
   return notes
     .replace(/\[Payee: .*?\]\s*/g, '')
     .replace(/\[Payment Method: .*?\]\s*/g, '')
+    .replace(/\[Tag: .*?\]\s*/g, '')
     .trim();
 }
 
 function getMeta(notes: string | null) {
-  if (!notes) return { payee: '', paymentMethod: '' };
+  if (!notes) return { payee: '', paymentMethod: '', tag: '' };
   const payee = notes.match(/\[Payee: (.*?)\]/)?.[1] ?? '';
   const paymentMethod =
     notes.match(/\[Payment Method: (.*?)\]/)?.[1] ?? '';
-  return { payee, paymentMethod };
+  const tag = notes.match(/\[Tag: (.*?)\]/)?.[1] ?? '';
+  return { payee, paymentMethod, tag };
 }
 
 function buildNotes(form: TransactionForm) {
@@ -123,6 +127,7 @@ function buildNotes(form: TransactionForm) {
     form.payment_method
       ? `[Payment Method: ${form.payment_method}]`
       : '',
+    form.tag.trim() ? `[Tag: ${form.tag.trim()}]` : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -168,6 +173,21 @@ export default function Transactions({
   const [attachmentName, setAttachmentName] = useState('');
 
   const [form, setForm] = useState<TransactionForm>(EMPTY_FORM);
+
+  const [transferForm, setTransferForm] = useState({
+    from_account_id: '',
+    to_account_id: '',
+    sent_amount: '',
+    received_amount: '',
+    sent_currency: 'EGP',
+    received_currency: 'EGP',
+    exchange_rate: '1',
+    fee: '',
+    fee_currency: 'EGP',
+    transaction_date: new Date().toISOString().slice(0, 10),
+    notes: '',
+    tag: '',
+  });
 
   async function loadData() {
     setLoading(true);
@@ -294,6 +314,7 @@ export default function Transactions({
         category?.name,
         meta.payee,
         meta.paymentMethod,
+        meta.tag,
         transaction.currency_code,
       ]
         .filter(Boolean)
@@ -323,6 +344,21 @@ export default function Transactions({
     });
     setModalType(type);
     setAttachmentName('');
+    const secondAccount = accounts.find((account) => account.id !== firstAccount?.id);
+    setTransferForm({
+      from_account_id: firstAccount?.id ?? '',
+      to_account_id: secondAccount?.id ?? '',
+      sent_amount: '',
+      received_amount: '',
+      sent_currency: firstAccount?.currency_code ?? 'EGP',
+      received_currency: secondAccount?.currency_code ?? firstAccount?.currency_code ?? 'EGP',
+      exchange_rate: firstAccount?.currency_code === (secondAccount?.currency_code ?? firstAccount?.currency_code) ? '1' : '',
+      fee: '',
+      fee_currency: firstAccount?.currency_code ?? 'EGP',
+      transaction_date: new Date().toISOString().slice(0, 10),
+      notes: '',
+      tag: '',
+    });
   }
 
   function openAddModal(type: TransactionType = 'expense') {
@@ -345,6 +381,7 @@ export default function Transactions({
       transaction_date: transaction.transaction_date,
       payee: meta.payee,
       payment_method: meta.paymentMethod,
+      tag: meta.tag,
       notes: getDisplayNotes(transaction.notes),
     });
     setAttachmentName('');
@@ -364,6 +401,65 @@ export default function Transactions({
       account_id: value,
       currency_code: account?.currency_code ?? current.currency_code,
     }));
+  }
+
+  async function handleTransferSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!transferForm.from_account_id || !transferForm.to_account_id) {
+      setError('Please select both source and destination accounts.');
+      return;
+    }
+    if (transferForm.from_account_id === transferForm.to_account_id) {
+      setError('Source and destination accounts must be different.');
+      return;
+    }
+    const sentAmount = Number(transferForm.sent_amount);
+    const receivedAmount = Number(transferForm.received_amount);
+    const exchangeRate = Number(transferForm.exchange_rate);
+    const fee = transferForm.fee ? Number(transferForm.fee) : 0;
+    if (!Number.isFinite(sentAmount) || sentAmount <= 0) { setError('Amount to send must be greater than zero.'); return; }
+    if (!Number.isFinite(receivedAmount) || receivedAmount <= 0) { setError('Amount to receive must be greater than zero.'); return; }
+    if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) { setError('Exchange rate must be greater than zero.'); return; }
+    if (!Number.isFinite(fee) || fee < 0) { setError('Transfer fee cannot be negative.'); return; }
+    setSaving(true); setError('');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setError('Your session has expired. Please sign in again.'); setSaving(false); return; }
+
+    const transferPayload = {
+      user_id: user.id,
+      from_account_id: transferForm.from_account_id,
+      to_account_id: transferForm.to_account_id,
+      amount: sentAmount,
+      currency_code: transferForm.sent_currency,
+      received_amount: receivedAmount,
+      received_currency_code: transferForm.received_currency,
+      exchange_rate: exchangeRate,
+      fee,
+      fee_currency_code: transferForm.fee_currency,
+      transaction_date: transferForm.transaction_date,
+      notes: [transferForm.tag.trim() ? `[Tag: ${transferForm.tag.trim()}]` : '', transferForm.notes.trim()].filter(Boolean).join('\n') || null,
+      status: 'completed',
+    };
+
+    const { data: transfer, error: transferError } = await supabase.from('transfers').insert(transferPayload).select('id').single();
+    if (transferError || !transfer) {
+      setError(transferError?.message || 'Unable to create transfer.'); setSaving(false); return;
+    }
+
+    const sourceTransaction = {
+      user_id: user.id, account_id: transferForm.from_account_id, category_id: null, type: 'transfer', amount: sentAmount, currency_code: transferForm.sent_currency, transaction_date: transferForm.transaction_date, description: 'Transfer', notes: transferPayload.notes, status: 'completed', transfer_id: transfer.id,
+    };
+    const destinationTransaction = {
+      user_id: user.id, account_id: transferForm.to_account_id, category_id: null, type: 'transfer', amount: receivedAmount, currency_code: transferForm.received_currency, transaction_date: transferForm.transaction_date, description: 'Transfer', notes: transferPayload.notes, status: 'completed', transfer_id: transfer.id,
+    };
+    const { error: txError } = await supabase.from('transactions').insert([sourceTransaction, destinationTransaction]);
+    if (txError) {
+      await supabase.from('transfers').delete().eq('id', transfer.id).eq('user_id', user.id);
+      setError(txError.message); setSaving(false); return;
+    }
+
+    setSaving(false); setModalOpen(false); setEditingTransaction(null);
+    await loadData();
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -888,21 +984,73 @@ export default function Transactions({
             </div>
 
             {modalType === 'transfer' ? (
-              <div className="px-7 py-7">
-                <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5 text-sm text-blue-900">
-                  <p className="font-bold">Transfer setup</p>
-                  <p className="mt-1 leading-6">
-                    Transfers use a source account and destination account. The dedicated transfer workflow will be connected when the transfer fields are wired to the transfers table.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setModalType('expense')}
-                    className="mt-4 h-10 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground"
-                  >
-                    Continue with Expense
-                  </button>
+              <form onSubmit={handleTransferSubmit} className="space-y-6 px-7 py-7">
+                <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5">
+                  <p className="text-sm font-bold text-blue-900">Transfer setup</p>
+                  <p className="mt-1 text-xs leading-5 text-blue-800">Move money between accounts. Different currencies are supported with a manual exchange rate.</p>
                 </div>
-              </div>
+
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold">From Account *</span>
+                    <select value={transferForm.from_account_id} onChange={(e) => { const a = accounts.find(x => x.id === e.target.value); setTransferForm(c => ({ ...c, from_account_id: e.target.value, sent_currency: a?.currency_code ?? c.sent_currency, fee_currency: a?.currency_code ?? c.fee_currency })); }} className={selectClass} required>
+                      <option value="">Select source account</option>
+                      {accounts.map(a => <option key={a.id} value={a.id}>{a.name} · {a.currency_code}</option>)}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold">To Account *</span>
+                    <select value={transferForm.to_account_id} onChange={(e) => { const a = accounts.find(x => x.id === e.target.value); setTransferForm(c => ({ ...c, to_account_id: e.target.value, received_currency: a?.currency_code ?? c.received_currency })); }} className={selectClass} required>
+                      <option value="">Select destination account</option>
+                      {accounts.map(a => <option key={a.id} value={a.id}>{a.name} · {a.currency_code}</option>)}
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold">Amount to Send *</span>
+                    <div className="flex overflow-hidden rounded-2xl border border-border bg-background">
+                      <input type="number" step="0.01" min="0.01" value={transferForm.sent_amount} onChange={e => { const value = e.target.value; setTransferForm(c => ({ ...c, sent_amount: value, received_amount: c.exchange_rate && Number(c.exchange_rate) > 0 ? (Number(value || 0) / Number(c.exchange_rate)).toFixed(2) : c.received_amount })); }} className="h-12 min-w-0 flex-1 bg-transparent px-4 text-base outline-none" placeholder="0.00" required />
+                      <span className="grid min-w-20 place-items-center border-l border-border px-3 text-xs font-bold">{transferForm.sent_currency}</span>
+                    </div>
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold">Amount to Receive *</span>
+                    <div className="flex overflow-hidden rounded-2xl border border-border bg-background">
+                      <input type="number" step="0.01" min="0.01" value={transferForm.received_amount} onChange={e => setTransferForm(c => ({ ...c, received_amount: e.target.value }))} className="h-12 min-w-0 flex-1 bg-transparent px-4 text-base outline-none" placeholder="0.00" required />
+                      <span className="grid min-w-20 place-items-center border-l border-border px-3 text-xs font-bold">{transferForm.received_currency}</span>
+                    </div>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold">Exchange Rate *</span>
+                    <input type="number" step="0.000001" min="0.000001" value={transferForm.exchange_rate} onChange={e => { const value = e.target.value; setTransferForm(c => ({ ...c, exchange_rate: value, received_amount: value && Number(value) > 0 && c.sent_amount ? (Number(c.sent_amount) / Number(value)).toFixed(2) : c.received_amount })); }} className={inputClass} placeholder="1" required />
+                    <p className="mt-1 text-[11px] text-muted-foreground">{transferForm.sent_currency} per {transferForm.received_currency}</p>
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold">Transfer Fee</span>
+                    <input type="number" step="0.01" min="0" value={transferForm.fee} onChange={e => setTransferForm(c => ({ ...c, fee: e.target.value }))} className={inputClass} placeholder="0.00" />
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold">Date *</span>
+                    <input type="date" value={transferForm.transaction_date} onChange={e => setTransferForm(c => ({ ...c, transaction_date: e.target.value }))} className={inputClass} required />
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold">Tag</span>
+                    <input value={transferForm.tag} onChange={e => setTransferForm(c => ({ ...c, tag: e.target.value }))} className={inputClass} placeholder="e.g. Savings, Investment" />
+                  </label>
+                  <label className="block sm:col-span-2">
+                    <span className="mb-2 block text-sm font-bold">Notes</span>
+                    <textarea value={transferForm.notes} onChange={e => setTransferForm(c => ({ ...c, notes: e.target.value }))} rows={3} className="min-h-24 w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" placeholder="Optional notes..." />
+                  </label>
+                </div>
+
+                {error && <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-3 text-xs font-medium text-destructive">{error}</div>}
+                <div className="flex justify-end gap-3 border-t border-border pt-5">
+                  <button type="button" onClick={() => setModalOpen(false)} className="h-10 rounded-xl border border-border px-4 text-xs font-bold">Cancel</button>
+                  <button type="submit" disabled={saving} className="h-10 rounded-xl bg-primary px-5 text-xs font-bold text-primary-foreground disabled:opacity-50">{saving ? 'Saving...' : 'Transfer'}</button>
+                </div>
+              </form>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6 px-7 py-7">
                 <div className="grid gap-5 sm:grid-cols-2">
@@ -1009,6 +1157,16 @@ export default function Transactions({
                         </option>
                       ))}
                     </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold">Tag</span>
+                    <input
+                      value={form.tag}
+                      onChange={(event) => updateField('tag', event.target.value)}
+                      className={inputClass}
+                      placeholder="e.g. Family, Work, Travel"
+                    />
                   </label>
 
                   <label className="block sm:col-span-2">
