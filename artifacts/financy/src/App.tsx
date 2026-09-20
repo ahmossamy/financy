@@ -62,6 +62,7 @@ type NavItem = {
 
 const primaryNav: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'Transactions', href: '/transactions', icon: ArrowLeftRight },
   { label: 'Money', href: '/money', icon: WalletCards },
   { label: 'Investments', href: '/investments', icon: LineChart },
   { label: 'Assets', href: '/assets', icon: Landmark },
@@ -1835,6 +1836,11 @@ function Router({
           <Route
             path="/credit-cards"
             component={() => <Accounts />}
+          />
+
+          <Route
+            path="/transactions"
+            component={() => <Transactions />}
           />
 
           <Route
