@@ -2,6 +2,7 @@ export type TransactionFieldKey =
   | 'time'
   | 'description'
   | 'payee'
+  | 'paymentMethod'
   | 'status'
   | 'person'
   | 'className'
@@ -45,6 +46,7 @@ export const TRANSACTION_FIELD_LABELS: Record<TransactionFieldKey, string> = {
   time: 'Time',
   description: 'Description',
   payee: 'Payee / Merchant',
+  paymentMethod: 'Payment Method',
   status: 'Status',
   person: 'Person',
   className: 'Class',
@@ -65,6 +67,7 @@ export const DEFAULT_TRANSACTION_SETTINGS: TransactionSettings = {
     time: true,
     description: true,
     payee: true,
+    paymentMethod: true,
     status: true,
     person: true,
     className: true,
