@@ -375,7 +375,7 @@ function TransactionsPreview() {
                 <label><span className="mb-2 block text-xs font-bold">Payee</span><input name="payee" placeholder="Who did you pay / receive from?" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm" /></label>
                 <label><span className="mb-2 block text-xs font-bold">Check #</span><input name="checkNumber" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm" /></label>
                 <label><span className="mb-2 block text-xs font-bold">Class</span><select name="className" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"><option>Personal</option><option>Business</option><option>Travel</option></select></label>
-                <label><span className="mb-2 block text-xs font-bold">Status</span><select name="status" disabled={entryMode === 'planned'} value={entryMode === 'planned' ? 'planned' : undefined} onChange={() => {}} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"><option value="cleared">Cleared</option><option value="not-cleared">Not cleared</option><option value="planned">Planned</option></select></label>
+                <label><span className="mb-2 block text-xs font-bold">Status</span><select name="status" disabled={entryMode === 'planned'} defaultValue="cleared" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"><option value="cleared">Cleared</option><option value="not-cleared">Not cleared</option></select></label>
               </div>
               <label className="flex items-center gap-2 text-xs font-semibold"><input name="recurring" type="checkbox" /> Recurring transaction</label>
               <label><span className="mb-2 block text-xs font-bold">Description</span><textarea name="description" rows={3} className="w-full rounded-xl border border-input bg-background px-3 py-3 text-sm" placeholder="Description, notes or reference..." /></label>
@@ -788,3 +788,443 @@ function AccountsPreview() {
                       </label>
                     </div>
                   )}
+                </div>
+
+                <div className="divide-y divide-border">
+                  {filteredAccountTransactions.map((tx) => {
+                    const balanceAfter = transactionBalances.get(tx.date + tx.title) ?? selectedAccount.balance;
+                    return (
+                      <button
+                        key={tx.date + tx.title}
+                        type="button"
+                        onClick={() => setSelectedTransaction(tx)}
+                        className="flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-primary/[0.035]"
+                      >
+                        <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted">
+                          {tx.type === 'income' && <ArrowDownLeft className="size-4 text-primary" />}
+                          {tx.type === 'expense' && <ArrowUpRight className="size-4" />}
+                          {tx.type === 'transfer' && <ArrowLeftRight className="size-4 text-primary" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-bold">{tx.title}</p>
+                          <p className="mt-1 truncate text-[11px] text-muted-foreground">{tx.date} · {tx.category} · {tx.account}</p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className={'text-sm font-extrabold ' + (tx.amount >= 0 ? 'text-primary' : 'text-destructive')}>
+                            {tx.amount >= 0 ? '+' : ''}{money(tx.amount, selectedAccount.currency)}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                            {money(balanceAfter, selectedAccount.currency)}
+                          </p>
+
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {filteredAccountTransactions.length === 0 && (
+                    <div className="px-5 py-10 text-center text-xs text-muted-foreground">No transactions match this filter.</div>
+                  )}
+                </div>
+              </Card>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedTransaction && selectedAccount && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center sm:p-6">
+          <div className="w-full max-w-xl overflow-hidden rounded-[28px] border border-border bg-card shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-5">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Transaction details</p>
+                <h3 className="mt-1 font-display text-2xl font-extrabold">{selectedTransaction.title}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{selectedTransaction.category} · {selectedTransaction.account}</p>
+              </div>
+              <button onClick={() => setSelectedTransaction(null)} className="rounded-xl border border-border px-3 py-2 text-xs font-bold hover:bg-muted">Close</button>
+            </div>
+            <div className="space-y-4 p-6">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Card className="p-4">
+                  <p className="text-[11px] text-muted-foreground">Amount</p>
+                  <p className={'mt-2 font-display text-2xl font-extrabold ' + (selectedTransaction.amount >= 0 ? 'text-primary' : 'text-destructive')}>
+                    {selectedTransaction.amount >= 0 ? '+' : ''}{money(selectedTransaction.amount, selectedAccount.currency)}
+                  </p>
+                </Card>
+                <Card className="p-4">
+                  <p className="text-[11px] text-muted-foreground">Date</p>
+                  <p className="mt-2 text-sm font-bold">{selectedTransaction.date}</p>
+                </Card>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Card className="p-4">
+                  <p className="text-[11px] text-muted-foreground">Type</p>
+                  <p className="mt-2 text-sm font-bold capitalize">{selectedTransaction.type}</p>
+                </Card>
+                <Card className="p-4">
+                  <p className="text-[11px] text-muted-foreground">Balance after transaction</p>
+                  <p className="mt-2 text-sm font-extrabold">{money(transactionBalances.get(selectedTransaction.date + selectedTransaction.title) ?? selectedAccount.balance, selectedAccount.currency)}</p>
+                </Card>
+              </div>
+              <Card className="p-4">
+                <p className="text-[11px] text-muted-foreground">Account</p>
+                <p className="mt-2 text-sm font-bold">{selectedAccount.name} · {selectedAccount.currency}</p>
+              </Card>
+              <div className="flex justify-end gap-2 border-t border-border pt-4">
+                <button onClick={() => setSelectedTransaction(null)} className="h-10 rounded-xl border border-border px-4 text-xs font-bold">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAdd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-[28px] border border-border bg-card p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Accounts</p>
+                <h3 className="mt-1 font-display text-2xl font-extrabold">{editingAccount ? 'Edit account' : 'New account'}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Add a cash, bank, investment or credit card account.</p>
+              </div>
+              <button onClick={() => setShowAdd(false)} className="rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-muted">Close</button>
+            </div>
+
+            <form onSubmit={submitAccount} className="mt-6 space-y-5">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-2 block text-xs font-bold">Account name *</span>
+                  <input
+                    name="name"
+                    required
+                    defaultValue={editingAccount?.name ?? ''}
+                    placeholder={accountFormType === 'Credit card' ? 'CIB Visa' : 'CIB Current Account'}
+                    className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-xs font-bold">Account type *</span>
+                  <select
+                    name="type"
+                    value={accountFormType}
+                    onChange={(event) => setAccountFormType(event.target.value as typeof accountFormType)}
+                    className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                  >
+                    <option>Bank</option>
+                    <option>Cash</option>
+                    <option>Credit card</option>
+                    <option>Prepaid</option>
+                    <option>E-Wallet</option>
+                  </select>
+                </label>
+
+                {accountFormType === 'Bank' && (
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-bold">Bank / Institution *</span>
+                    <input name="bank" required defaultValue={editingAccount?.type === 'Bank' ? 'CIB' : ''} placeholder="CIB" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                  </label>
+                )}
+
+                {accountFormType === 'Cash' && (
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-bold">Location / Wallet Name *</span>
+                    <input name="location" required placeholder="Home cash" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                  </label>
+                )}
+
+                {accountFormType === 'E-Wallet' && (
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-bold">Provider *</span>
+                    <input name="provider" required placeholder="Vodafone Cash" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                  </label>
+                )}
+
+                {accountFormType === 'Credit card' && (
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-bold">Bank / Provider *</span>
+                    <input name="bank" required defaultValue={editingAccount?.type === 'Credit card' ? 'CIB' : ''} placeholder="CIB" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                  </label>
+                )}
+
+                <label className="block">
+                  <span className="mb-2 block text-xs font-bold">Currency *</span>
+                  <select name="currency" defaultValue={editingAccount?.currency ?? 'EGP'} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10">
+                    <option value="EGP">EGP — Egyptian Pound</option>
+                    <option value="USD">USD — US Dollar</option>
+                    <option value="AED">AED — UAE Dirham</option>
+                    <option value="SAR">SAR — Saudi Riyal</option>
+                  </select>
+                  <span className="mt-1 block text-[10px] text-muted-foreground">More currencies can be added later from Settings.</span>
+                </label>
+
+                {accountFormType !== 'Credit card' && (
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-bold">Opening balance</span>
+                    <input name="opening" type="number" step="0.01" defaultValue={editingAccount?.balance ?? 0} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                  </label>
+                )}
+
+                {accountFormType === 'Credit card' && (
+                  <>
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-bold">Credit limit *</span>
+                      <input name="creditLimit" required type="number" min="0" step="0.01" placeholder="50,000" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-bold">Current outstanding</span>
+                      <input name="outstanding" type="number" min="0" step="0.01" defaultValue={editingAccount?.balance ? Math.abs(editingAccount.balance) : 0} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-bold">Statement day</span>
+                      <input name="statementDay" type="number" min="1" max="31" step="1" placeholder="1 - 31" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-bold">Payment due day</span>
+                      <input name="dueDay" type="number" min="1" max="31" step="1" placeholder="1 - 31" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                    </label>
+                  </>
+                )}
+
+                <label className="block sm:col-span-2">
+                  <span className="mb-2 block text-xs font-bold">Notes</span>
+                  <textarea
+                    name="notes"
+                    defaultValue=""
+                    rows={4}
+                    placeholder="Optional notes..."
+                    className="min-h-24 w-full rounded-xl border border-input bg-background px-3 py-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                  />
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-border pt-5">
+                <button type="button" onClick={() => { setShowAdd(false); setEditingAccount(null); }} className="h-10 rounded-xl border border-border px-4 text-xs font-bold">Cancel</button>
+                <button type="submit" className="h-10 rounded-xl bg-primary px-5 text-xs font-bold text-primary-foreground">{editingAccount ? 'Save changes' : 'Create'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+export default function MoneyProPreview() {
+  const [screen, setScreen] = useState<Screen>('overview');
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [monthOffset, setMonthOffset] = useState(0);
+
+  const monthLabel = useMemo(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + monthOffset);
+    return new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(d);
+  }, [monthOffset]);
+
+  return (
+    <div className="min-h-dvh bg-background text-foreground">
+      {mobileOpen && (
+        <button
+          aria-label="Close menu"
+          className="fixed inset-0 z-40 bg-black/20 lg:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <div className="flex min-h-dvh">
+        <aside className={'fixed inset-y-0 left-0 z-50 w-[248px] border-r border-border bg-card p-4 transition-transform lg:static lg:translate-x-0 ' + (mobileOpen ? 'translate-x-0' : '-translate-x-full')}>
+          <div className="flex items-center justify-between px-2 pb-6">
+            <div className="flex items-center gap-3">
+              <div className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground">
+                <BarChart3 className="size-5" />
+              </div>
+              <div>
+                <p className="font-display text-lg font-extrabold tracking-tight">Financy</p>
+                <p className="text-[11px] text-muted-foreground">Money Pro inspired</p>
+              </div>
+            </div>
+            <button className="lg:hidden" onClick={() => setMobileOpen(false)} aria-label="Close">
+              <ChevronLeft className="size-5" />
+            </button>
+          </div>
+
+          <nav className="space-y-1">
+            {screens.map((item) => {
+              const Icon = item.icon;
+              const active = item.id === screen;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setScreen(item.id);
+                    setMobileOpen(false);
+                  }}
+                  className={'flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition-colors ' + (active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground')}
+                >
+                  <Icon className="size-[18px]" />
+                  {item.label}
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="mt-8 rounded-2xl border border-border bg-muted/40 p-3">
+            <p className="text-xs font-bold">Current profile</p>
+            <p className="mt-1 text-sm">Ahmed</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">Base currency: EGP</p>
+          </div>
+
+          <button className="mt-4 flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground">
+            <Settings className="size-[18px]" />
+            Settings
+          </button>
+        </aside>
+
+        <main className="min-w-0 flex-1">
+          <header className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur-md sm:px-7">
+            <div className="flex items-center gap-3">
+              <button
+                className="grid size-9 place-items-center rounded-xl hover:bg-muted lg:hidden"
+                onClick={() => setMobileOpen(true)}
+                aria-label="Open menu"
+              >
+                <Menu className="size-5" />
+              </button>
+              <div>
+                <p className="text-xs text-muted-foreground">Personal finance</p>
+                <h1 className="font-display text-lg font-extrabold tracking-tight">
+                  {screens.find((x) => x.id === screen)?.label}
+                </h1>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button className="grid size-9 place-items-center rounded-xl border border-border bg-card hover:bg-muted" aria-label="Search">
+                <Search className="size-4" />
+              </button>
+              <button className="inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-3.5 text-xs font-bold text-primary-foreground">
+                <Plus className="size-4" />
+                Add
+              </button>
+            </div>
+          </header>
+
+          <div className="mx-auto max-w-[1380px] space-y-6 p-4 sm:p-7 lg:p-9">
+            {screen === 'overview' && (
+              <>
+                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <Card className="p-5"><p className="text-xs font-semibold text-muted-foreground">Net worth</p><p className="mt-2 font-display text-3xl font-extrabold">{money(143240)}</p><p className="mt-2 text-xs text-muted-foreground">Assets minus liabilities</p></Card>
+                  <Card className="p-5"><p className="text-xs font-semibold text-muted-foreground">Available cash</p><p className="mt-2 font-display text-3xl font-extrabold">{money(92700)}</p><p className="mt-2 text-xs text-muted-foreground">Across payment accounts</p></Card>
+                  <Card className="p-5"><p className="text-xs font-semibold text-muted-foreground">Investments</p><p className="mt-2 font-display text-3xl font-extrabold">{money(71300)}</p><p className="mt-2 text-xs text-muted-foreground">Current value</p></Card>
+                  <Card className="p-5"><p className="text-xs font-semibold text-muted-foreground">Liabilities</p><p className="mt-2 font-display text-3xl font-extrabold">{money(20760)}</p><p className="mt-2 text-xs text-muted-foreground">Cards & debts</p></Card>
+                </section>
+
+                <section className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+                  <Card className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">This month</p><h2 className="mt-1 font-display text-xl font-extrabold">Cash flow</h2></div>
+                      <div className="rounded-xl bg-muted px-3 py-2 text-xs font-bold">{monthLabel}</div>
+                    </div>
+                    <div className="mt-6 grid grid-cols-2 gap-4">
+                      <div className="rounded-2xl bg-muted/50 p-4"><p className="text-xs text-muted-foreground">Income</p><p className="mt-1 text-xl font-extrabold">{money(32780)}</p></div>
+                      <div className="rounded-2xl bg-muted/50 p-4"><p className="text-xs text-muted-foreground">Expenses</p><p className="mt-1 text-xl font-extrabold">{money(14220)}</p></div>
+                    </div>
+                    <div className="mt-6 flex h-44 items-end gap-2">
+                      {[35, 48, 34, 60, 42, 72, 55, 82, 64, 90, 70, 78].map((height, i) => (
+                        <div key={i} className="flex flex-1 items-end"><div className="w-full rounded-t-lg bg-primary/80" style={{ height: height + '%' }} /></div>
+                      ))}
+                    </div>
+                    <div className="mt-2 flex justify-between text-[10px] text-muted-foreground"><span>Week 1</span><span>Week 2</span><span>Week 3</span><span>Week 4</span></div>
+                  </Card>
+
+                  <Card className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Budgets</p><h2 className="mt-1 font-display text-xl font-extrabold">At a glance</h2></div>
+                      <button onClick={() => setScreen('budgets')} className="text-xs font-bold text-primary">View all</button>
+                    </div>
+                    <div className="mt-5 space-y-5">
+                      {budgetRows.slice(0, 3).map((row) => (
+                        <div key={row.label}>
+                          <div className="mb-2 flex items-center justify-between text-xs"><span className="font-semibold">{row.label}</span><span className="text-muted-foreground">{money(row.spent)} / {money(row.limit)}</span></div>
+                          <Progress value={(row.spent / row.limit) * 100} />
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </section>
+
+                <section className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
+                  <Card className="p-6">
+                    <div className="flex items-center justify-between"><h2 className="font-display text-xl font-extrabold">Recent transactions</h2><button onClick={() => setScreen('transactions')} className="text-xs font-bold text-primary">See all</button></div>
+                    <div className="mt-4 divide-y divide-border">
+                      {transactionRows.slice(0, 5).map((row) => (
+                        <div key={row.date + row.title} className="flex items-center justify-between gap-3 py-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted">
+                              {row.type === 'income' && <ArrowDownLeft className="size-4 text-primary" />}
+                              {row.type === 'expense' && <ArrowUpRight className="size-4" />}
+                              {row.type === 'transfer' && <ArrowLeftRight className="size-4 text-primary" />}
+                            </div>
+                            <div className="min-w-0"><p className="truncate text-sm font-bold">{row.title}</p><p className="truncate text-[11px] text-muted-foreground">{row.category} · {row.account}</p></div>
+                          </div>
+                          <div className={'text-sm font-extrabold ' + (row.amount >= 0 ? 'text-primary' : 'text-foreground')}>{row.amount >= 0 ? '+' : ''}{money(row.amount)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                  <Card className="p-6">
+                    <div className="flex items-center justify-between"><h2 className="font-display text-xl font-extrabold">Accounts</h2><button onClick={() => setScreen('accounts')} className="text-xs font-bold text-primary">Manage</button></div>
+                    <div className="mt-4 space-y-3">
+                      {accountRows.slice(0, 5).map((row) => (
+                        <div key={row.name} className="flex items-center justify-between rounded-2xl border border-border px-4 py-3">
+                          <div><p className="text-sm font-bold">{row.name}</p><p className="text-[11px] text-muted-foreground">{row.type}</p></div>
+                          <p className="text-sm font-extrabold">{money(row.balance, row.currency)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </section>
+              </>
+            )}
+
+            {screen === 'accounts' && (
+              <AccountsPreview />
+            )}
+
+            {screen === 'transactions' && (
+              <TransactionsPreview />
+            )}
+
+            {screen === 'calendar' && (
+              <section className="space-y-5">
+                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+                  <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Bill planning</p><h2 className="mt-1 font-display text-3xl font-extrabold">Calendar</h2><p className="mt-1 text-sm text-muted-foreground">Recurring bills and scheduled transactions.</p></div>
+                  <div className="flex items-center gap-2"><button onClick={() => setMonthOffset((v) => v - 1)} className="grid size-9 place-items-center rounded-xl border border-border"><ChevronLeft className="size-4" /></button><div className="min-w-36 text-center text-sm font-bold">{monthLabel}</div><button onClick={() => setMonthOffset((v) => v + 1)} className="grid size-9 place-items-center rounded-xl border border-border"><ChevronRight className="size-4" /></button></div>
+                </div>
+                <Card className="overflow-hidden p-3 sm:p-5">
+                  <div className="grid grid-cols-7 gap-2 text-center text-[10px] font-bold text-muted-foreground sm:text-[11px]">{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d) => <div key={d} className="py-2">{d}</div>)}</div>
+                  <div className="mt-2 grid grid-cols-7 gap-2">
+                    {Array.from({ length: 35 }, (_, i) => {
+                      const day = i - 2;
+                      return <div key={i} className="min-h-20 rounded-2xl border border-border p-2 text-left sm:min-h-24"><p className="text-xs font-bold">{day > 0 && day <= 30 ? day : ''}</p>{[6, 13, 21, 28].includes(i) && <div className="mt-2 rounded-lg bg-primary/10 px-2 py-1 text-[9px] font-bold text-primary">Electricity</div>}{[10, 25].includes(i) && <div className="mt-1 rounded-lg bg-muted px-2 py-1 text-[9px] font-bold">Salary</div>}</div>;
+                    })}
+                  </div>
+                </Card>
+              </section>
+            )}
+
+            {screen === 'budgets' && (
+              <section className="space-y-5">
+                <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Spending control</p><h2 className="mt-1 font-display text-3xl font-extrabold">Budgets</h2><p className="mt-1 text-sm text-muted-foreground">Category limits, progress and rollover-ready planning.</p></div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  {budgetRows.map((row) => {
+                    const pct = (row.spent / row.limit) * 100;
+                    return <Card key={row.label} className="p-5"><div className="flex items-center justify-between"><span className="text-sm font-bold">{row.label}</span><span className="text-xs text-muted-foreground">{money(row.spent)} / {money(row.limit)}</span></div><div className="mt-4"><Progress value={pct} /></div><div className="mt-2 flex justify-between text-[11px] text-muted-foreground"><span>{Math.round(pct)}% used</span><span>{money(row.limit - row.spent)} left</span></div></Card>;
+                  })}
+                </div>
+              </section>
+            )}
+
+            {screen === 'reports' && (
+              <section className="space-y-5">
