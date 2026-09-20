@@ -121,6 +121,10 @@ function accountTypeLabel(value: string) {
   );
 }
 
+function getTag(notes: string | null) {
+  return notes?.match(/\[Tag: (.*?)\]/)?.[1] ?? '';
+}
+
 function formatDate(value: string) {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
@@ -1232,9 +1236,12 @@ export default function Accounts() {
                             <p className="truncate text-sm font-bold">
                               {category?.name || (isTransfer ? 'Transfer' : isIncome ? 'Income' : 'Expense')}
                             </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {formatDate(transaction.transaction_date)} · {transaction.status}
-                            </p>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              <span>{formatDate(transaction.transaction_date)} · {transaction.status}</span>
+                              {getTag(transaction.notes) && (
+                                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold">#{getTag(transaction.notes)}</span>
+                              )}
+                            </div>
                           </div>
 
                           <div className="text-right">
@@ -1299,6 +1306,12 @@ export default function Accounts() {
                   <p className="mt-2 text-sm font-bold capitalize">{selectedTransaction.status}</p>
                 </div>
               </div>
+              {getTag(selectedTransaction.notes) && (
+                <div className="rounded-2xl border border-border p-4">
+                  <p className="text-[11px] font-semibold text-muted-foreground">Tag</p>
+                  <p className="mt-2 text-sm font-bold">#{getTag(selectedTransaction.notes)}</p>
+                </div>
+              )}
               {selectedTransaction.notes && (
                 <div className="rounded-2xl border border-border p-4">
                   <p className="text-[11px] font-semibold text-muted-foreground">Notes</p>
