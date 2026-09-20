@@ -1846,10 +1846,10 @@ function Router({
         userEmail={userEmail}
       >
         <Switch>
-          <Route path="/" component={Dashboard} />
+          <Route path="/" component={MoneyProPreview} />
           <Route
             path="/dashboard"
-            component={Dashboard}
+            component={MoneyProPreview}
           />
 
           <Route
