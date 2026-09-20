@@ -41,6 +41,16 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import {
+  loadTransactionSettings,
+  saveTransactionSettings,
+  resetTransactionSettings,
+  TRANSACTION_FIELD_LABELS,
+  type CategoryItem,
+  type TransactionFieldKey,
+  type TransactionSettings,
+} from '@/lib/transaction-settings';
+
+import {
   Link,
   Route,
   Switch,
@@ -1363,254 +1373,256 @@ const settingsGroups = [
   {
     title: 'Personal',
     items: [
-      ['Profile', 'Manage your personal workspace details.', 'Profile'],
-      [
-        'Appearance',
-        'Choose how Financy feels in every light.',
-        'Appearance',
-      ],
-      [
-        'Language',
-        'Prepare your preferred language and direction.',
-        'Language',
-      ],
-      [
-        'Currency',
-        'Set the currency used across your workspace.',
-        'Currency',
-      ],
+      ['Profile', 'Manage your personal workspace details.'],
+      ['Appearance', 'Choose how Financy feels in every light.'],
+      ['Language', 'Choose your language and direction.'],
+      ['Currency', 'Set your base currency.'],
     ],
   },
   {
-    title: 'Workspace',
+    title: 'Money',
     items: [
-      [
-        'Categories',
-        'Shape the labels that make sense for you.',
-        'Categories',
-      ],
-      [
-        'Investment Settings',
-        'Set your investing preferences and defaults.',
-        'Investment Settings',
-      ],
-      [
-        'Notifications',
-        'Choose which reminders deserve your attention.',
-        'Notifications',
-      ],
+      ['Transaction Form', 'Choose which optional transaction fields are visible.'],
+      ['Categories', 'Manage separate expense and income category trees.'],
+      ['People, Classes & Tags', 'Manage people, classes and tags used by transactions.'],
+      ['Payment Methods & Payees', 'Manage payment methods and saved merchants.'],
+    ],
+  },
+  {
+    title: 'Investments',
+    items: [
+      ['Investment Settings', 'Set investment defaults and preferences.'],
     ],
   },
   {
     title: 'Trust & control',
     items: [
-      [
-        'Backup & Restore',
-        'Keep a portable copy of your workspace.',
-        'Backup & Restore',
-      ],
-      [
-        'Security & Privacy',
-        'Review the principles behind your private workspace.',
-        'Security & Privacy',
-      ],
-      [
-        'Data Management',
-        'Manage the data you bring into Financy.',
-        'Data Management',
-      ],
-      [
-        'About',
-        'Learn more about this foundation release.',
-        'About',
-      ],
+      ['Notifications', 'Choose which reminders deserve your attention.'],
+      ['Backup & Restore', 'Manage workspace backup and restore.'],
+      ['Security & Privacy', 'Review privacy and security controls.'],
+      ['Data Management', 'Manage workspace data.'],
+      ['About', 'About Financy.'],
     ],
   },
 ];
 
 function Settings() {
-  const [theme, setTheme] = useState<
-    'system' | 'light' | 'dark'
-  >('system');
-
+  const [theme, setTheme] = useState<'system' | 'light' | 'dark'>('system');
   const [language, setLanguage] = useState('English');
-  const [active, setActive] = useState('Appearance');
+  const [active, setActive] = useState('Transaction Form');
+  const [transactionSettings, setTransactionSettings] = useState<TransactionSettings>(() => loadTransactionSettings());
+  const [categoryType, setCategoryType] = useState<'expense' | 'income'>('expense');
+  const [categoryName, setCategoryName] = useState('');
+  const [parentCategoryId, setParentCategoryId] = useState('');
+  const [listInputs, setListInputs] = useState({
+    people: '',
+    classes: '',
+    tags: '',
+    paymentMethods: '',
+    payees: '',
+  });
 
   useEffect(() => {
     const root = document.documentElement;
-
     const isDark =
       theme === 'dark' ||
-      (theme === 'system' &&
-        window.matchMedia(
-          '(prefers-color-scheme: dark)',
-        ).matches);
-
+      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     root.classList.toggle('dark', isDark);
     root.dir = language === 'العربية' ? 'rtl' : 'ltr';
-
-    return () => {
-      root.dir = 'ltr';
-    };
+    return () => { root.dir = 'ltr'; };
   }, [theme, language]);
+
+  const optionalFields = Object.entries(transactionSettings.visibleOptionalFields) as Array<[TransactionFieldKey, boolean]>;
+  const activeCategories = categoryType === 'expense' ? transactionSettings.expenseCategories : transactionSettings.incomeCategories;
+  const topLevelCategories = activeCategories.filter((item) => !item.parentId);
+  const description = settingsGroups.flatMap((group) => group.items).find(([label]) => label === active)?.[1] ?? '';
+
+  function updateSettings(next: TransactionSettings) {
+    setTransactionSettings(next);
+    saveTransactionSettings(next);
+  }
+
+  function toggleField(key: TransactionFieldKey, enabled: boolean) {
+    updateSettings({
+      ...transactionSettings,
+      visibleOptionalFields: { ...transactionSettings.visibleOptionalFields, [key]: enabled },
+    });
+  }
+
+  function setAllFields(enabled: boolean) {
+    updateSettings({
+      ...transactionSettings,
+      visibleOptionalFields: Object.fromEntries(Object.keys(transactionSettings.visibleOptionalFields).map((key) => [key, enabled])) as TransactionSettings['visibleOptionalFields'],
+    });
+  }
+
+  function addCategory() {
+    const name = categoryName.trim();
+    if (!name) return;
+    const key = categoryType === 'expense' ? 'expenseCategories' : 'incomeCategories';
+    const list = transactionSettings[key];
+    if (list.some((item) => item.name.toLowerCase() === name.toLowerCase())) return;
+    const item: CategoryItem = {
+      id: (categoryType === 'expense' ? 'exp-' : 'inc-') + Date.now(),
+      name,
+      parentId: parentCategoryId || null,
+    };
+    updateSettings({ ...transactionSettings, [key]: [...list, item] });
+    setCategoryName('');
+    setParentCategoryId('');
+  }
+
+  function removeCategory(id: string) {
+    const key = categoryType === 'expense' ? 'expenseCategories' : 'incomeCategories';
+    const list = transactionSettings[key];
+    const removeIds = new Set([id, ...list.filter((item) => item.parentId === id).map((item) => item.id)]);
+    updateSettings({ ...transactionSettings, [key]: list.filter((item) => !removeIds.has(item.id)) });
+  }
+
+  function addListItem(key: 'people' | 'classes' | 'tags' | 'paymentMethods' | 'payees', inputKey: keyof typeof listInputs) {
+    const value = listInputs[inputKey].trim();
+    if (!value || transactionSettings[key].some((item) => item.toLowerCase() === value.toLowerCase())) return;
+    updateSettings({ ...transactionSettings, [key]: [...transactionSettings[key], value] });
+    setListInputs((state) => ({ ...state, [inputKey]: '' }));
+  }
+
+  function removeListItem(key: 'people' | 'classes' | 'tags' | 'paymentMethods' | 'payees', value: string) {
+    updateSettings({ ...transactionSettings, [key]: transactionSettings[key].filter((item) => item !== value) });
+  }
+
+  function renderListEditor(
+    key: 'people' | 'classes' | 'tags' | 'paymentMethods' | 'payees',
+    inputKey: keyof typeof listInputs,
+    title: string,
+    placeholder: string,
+  ) {
+    return (
+      <div className="rounded-2xl border border-border p-4">
+        <p className="text-sm font-bold">{title}</p>
+        <div className="mt-3 flex gap-2">
+          <input value={listInputs[inputKey]} onChange={(event) => setListInputs((state) => ({ ...state, [inputKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addListItem(key, inputKey); } }} placeholder={placeholder} className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-xs" />
+          <button type="button" onClick={() => addListItem(key, inputKey)} className="h-10 rounded-lg bg-primary px-3 text-[10px] font-bold text-primary-foreground">Add</button>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {transactionSettings[key].map((item) => (
+            <span key={item} className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1.5 text-[10px] font-semibold">
+              {item}
+              <button type="button" onClick={() => removeListItem(key, item)} className="text-muted-foreground hover:text-destructive">×</button>
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-sm font-semibold text-primary">
-          Workspace
-        </p>
-
-        <h2 className="mt-1 font-display text-[34px] font-extrabold tracking-[-0.06em]">
-          Settings
-        </h2>
-
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Make Financy feel like your own quiet financial notebook.
-        </p>
+        <p className="text-sm font-semibold text-primary">Workspace</p>
+        <h2 className="mt-1 font-display text-[34px] font-extrabold tracking-[-0.06em]">Settings</h2>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">Control Financy without changing required transaction information.</p>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[240px_1fr]">
-        <nav
-          className="space-y-1 rounded-2xl border border-border bg-card p-2 card-shadow"
-          aria-label="Settings sections"
-        >
-          {settingsGroups
-            .flatMap((group) => group.items)
-            .map(([label]) => (
-              <button
-                key={label}
-                onClick={() => setActive(label)}
-                className={cn(
-                  'flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold transition-colors',
-                  active === label
-                    ? 'bg-secondary text-secondary-foreground'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                )}
-                data-testid={`button-settings-${label
-                  .toLowerCase()
-                  .replaceAll(' ', '-')}`}
-              >
-                {label}
-                <ChevronRight className="size-3.5" />
-              </button>
-            ))}
+      <div className="grid gap-5 lg:grid-cols-[250px_1fr]">
+        <nav className="space-y-1 rounded-2xl border border-border bg-card p-2 card-shadow">
+          {settingsGroups.map((group) => (
+            <div key={group.title} className="space-y-1 pb-3">
+              <p className="px-3 pt-2 text-[10px] font-bold uppercase tracking-[.14em] text-muted-foreground">{group.title}</p>
+              {group.items.map(([label]) => (
+                <button type="button" key={label} onClick={() => setActive(label)} className={cn('flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold', active === label ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground')}>
+                  {label}<ChevronRight className="size-3.5" />
+                </button>
+              ))}
+            </div>
+          ))}
         </nav>
 
         <section className="rounded-2xl border border-border bg-card p-5 card-shadow sm:p-7">
-          <div className="mb-7 flex items-start gap-3">
-            <span className="grid size-10 place-items-center rounded-xl bg-secondary text-secondary-foreground">
-              <SettingsIcon className="size-5" />
-            </span>
-
-            <div>
-              <h3 className="font-display text-lg font-bold tracking-[-0.03em]">
-                {active}
-              </h3>
-
-              <p className="mt-1 text-sm text-muted-foreground">
-                {
-                  settingsGroups
-                    .flatMap((group) => group.items)
-                    .find(([label]) => label === active)?.[1]
-                }
-              </p>
-            </div>
+          <div className="mb-6">
+            <h3 className="font-display text-lg font-bold">{active}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
           </div>
 
-          {active === 'Appearance' ? (
-            <div className="space-y-3">
-              <p className="text-xs font-bold uppercase tracking-[.12em] text-muted-foreground">
-                Theme
-              </p>
-
-              <div className="grid gap-3 sm:grid-cols-3">
-                {[
-                  ['system', 'System', Globe2],
-                  ['light', 'Light', Sun],
-                  ['dark', 'Dark', Moon],
-                ].map(([value, label, Icon]) => {
-                  const ThemeIcon = Icon as LucideIcon;
-
-                  return (
-                    <button
-                      key={value as string}
-                      onClick={() =>
-                        setTheme(
-                          value as
-                            | 'system'
-                            | 'light'
-                            | 'dark',
-                        )
-                      }
-                      className={cn(
-                        'flex items-center gap-3 rounded-xl border p-3 text-left transition-colors',
-                        theme === value
-                          ? 'border-primary bg-[hsl(var(--primary)/.08)]'
-                          : 'border-border hover:bg-muted',
-                      )}
-                      data-testid={`button-theme-${value}`}
-                    >
-                      <ThemeIcon
-                        className={cn(
-                          'size-4',
-                          theme === value
-                            ? 'text-primary'
-                            : 'text-muted-foreground',
-                        )}
-                      />
-
-                      <span className="text-xs font-bold">
-                        {label as string}
-                      </span>
-
-                      {theme === value && (
-                        <span className="ml-auto size-2 rounded-full bg-primary" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <p className="mt-5 text-xs leading-5 text-muted-foreground">
-                System is the default. Financy follows your device preference until you choose a different appearance.
-              </p>
+          {active === 'Appearance' && (
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[
+                ['system', 'System', Globe2],
+                ['light', 'Light', Sun],
+                ['dark', 'Dark', Moon],
+              ].map(([value, label, Icon]) => {
+                const ThemeIcon = Icon as LucideIcon;
+                return <button type="button" key={value as string} onClick={() => setTheme(value as 'system' | 'light' | 'dark')} className={cn('flex items-center gap-3 rounded-xl border p-3 text-left', theme === value ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted')}><ThemeIcon className="size-4" /><span className="text-xs font-bold">{label as string}</span></button>;
+              })}
             </div>
-          ) : active === 'Language' ? (
+          )}
+
+          {active === 'Language' && (
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-[.12em] text-muted-foreground">Language</label>
+              <select value={language} onChange={(event) => setLanguage(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-semibold"><option>English</option><option>العربية</option></select>
+            </div>
+          )}
+
+          {active === 'Transaction Form' && (
             <div className="space-y-4">
-              <label
-                className="block text-xs font-bold uppercase tracking-[.12em] text-muted-foreground"
-                htmlFor="language-select"
-              >
-                Language
-              </label>
-
-              <select
-                id="language-select"
-                value={language}
-                onChange={(event) =>
-                  setLanguage(event.target.value)
-                }
-                className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm font-semibold"
-                data-testid="select-language"
-              >
-                <option>English</option>
-                <option>العربية</option>
-              </select>
-
-              <p className="text-xs leading-5 text-muted-foreground">
-                Arabic support is prepared with right-to-left document direction. Translated content will be added in a future release.
-              </p>
+              <div className="flex flex-col gap-3 rounded-2xl border border-border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div><p className="text-sm font-bold">Optional transaction fields</p><p className="mt-1 text-xs text-muted-foreground">Required: Account, Amount, Currency, Date and Category. These cannot be hidden.</p></div>
+                <div className="flex gap-2"><button type="button" onClick={() => setAllFields(true)} className="rounded-lg border border-border px-3 py-2 text-[10px] font-bold">Show all</button><button type="button" onClick={() => setAllFields(false)} className="rounded-lg border border-border px-3 py-2 text-[10px] font-bold">Hide all</button></div>
+              </div>
+              <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border">
+                {['Account','Amount','Currency','Date','Category'].map((label) => <div key={label} className="flex items-center justify-between px-4 py-3"><span className="text-sm font-bold">{label}</span><span className="rounded-full bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary">Required</span></div>)}
+                {optionalFields.map(([key, enabled]) => (
+                  <label key={key} className="flex cursor-pointer items-center justify-between px-4 py-3">
+                    <span className="text-sm font-semibold">{TRANSACTION_FIELD_LABELS[key]}</span>
+                    <input type="checkbox" checked={enabled} onChange={(event) => toggleField(key, event.target.checked)} />
+                  </label>
+                ))}
+              </div>
+              <button type="button" onClick={() => { resetTransactionSettings(); setTransactionSettings(loadTransactionSettings()); }} className="rounded-xl border border-border px-4 py-2.5 text-xs font-bold">Reset to defaults</button>
             </div>
-          ) : (
-            <div className="rounded-xl border border-dashed border-border bg-muted/40 p-5">
-              <p className="text-sm font-semibold">
-                This foundation is intentionally quiet.
-              </p>
+          )}
 
-              <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                The controls for {active.toLowerCase()} will become available as Financy grows. No settings are changed behind the scenes.
-              </p>
+          {active === 'Categories' && (
+            <div className="space-y-5">
+              <div className="flex gap-2">
+                <button type="button" onClick={() => { setCategoryType('expense'); setParentCategoryId(''); }} className={cn('rounded-xl px-3 py-2 text-xs font-bold', categoryType === 'expense' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>Expenses</button>
+                <button type="button" onClick={() => { setCategoryType('income'); setParentCategoryId(''); }} className={cn('rounded-xl px-3 py-2 text-xs font-bold', categoryType === 'income' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>Income</button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                <input value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="Category or subcategory name" className="h-10 rounded-xl border border-border bg-background px-3 text-sm" />
+                <select value={parentCategoryId} onChange={(event) => setParentCategoryId(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-sm"><option value="">Top level</option>{topLevelCategories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+                <button type="button" onClick={addCategory} className="h-10 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground">Add</button>
+              </div>
+              <div className="space-y-2">
+                {activeCategories.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between rounded-xl border border-border px-4 py-3">
+                    <div><p className="text-sm font-semibold">{item.parentId ? (activeCategories.find((parent) => parent.id === item.parentId)?.name ?? '') + ' > ' : ''}{item.name}</p><p className="text-[10px] text-muted-foreground">{item.parentId ? 'Subcategory' : 'Category'}</p></div>
+                    <button type="button" onClick={() => removeCategory(item.id)} className="text-xs font-bold text-muted-foreground hover:text-destructive">Remove</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {active === 'People, Classes & Tags' && (
+            <div className="grid gap-5 lg:grid-cols-3">
+              {renderListEditor('people','people','People','Add person')}
+              {renderListEditor('classes','classes','Classes','Add class')}
+              {renderListEditor('tags','tags','Tags','Add tag')}
+            </div>
+          )}
+
+          {active === 'Payment Methods & Payees' && (
+            <div className="grid gap-5 lg:grid-cols-2">
+              {renderListEditor('paymentMethods','paymentMethods','Payment Methods','Add payment method')}
+              {renderListEditor('payees','payees','Payees / Merchants','Add merchant')}
+            </div>
+          )}
+
+          {!['Appearance','Language','Transaction Form','Categories','People, Classes & Tags','Payment Methods & Payees'].includes(active) && (
+            <div className="rounded-xl border border-dashed border-border bg-muted/30 p-5">
+              <p className="text-sm font-semibold">This settings section is ready for its module.</p>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">The structure is included now so Financy can keep one consistent settings model as the remaining modules are connected.</p>
             </div>
           )}
         </section>
