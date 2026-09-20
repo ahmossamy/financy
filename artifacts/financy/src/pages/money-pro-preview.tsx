@@ -123,6 +123,130 @@ type TransactionRecord = {
   time?: string;
 };
 
+
+function InvestmentsPreview() {
+  type InvestmentTab = 'overview' | 'portfolios' | 'platforms' | 'assets' | 'activity';
+  type Holding = { id: string; asset: string; symbol: string; type: string; portfolio: string; platform: string; quantity: number; avgCost: number; price: number; currency: string };
+
+  const [tab, setTab] = useState<InvestmentTab>('overview');
+  const [showAdd, setShowAdd] = useState(false);
+  const [holdings, setHoldings] = useState<Holding[]>([
+    { id: 'h1', asset: 'Orascom Construction', symbol: 'ORAS', type: 'Stock', portfolio: 'Wealth', platform: 'Thndr', quantity: 120, avgCost: 133.33, price: 160, currency: 'EGP' },
+    { id: 'h2', asset: 'EFG Holding', symbol: 'EFID', type: 'Stock', portfolio: 'Wealth', platform: 'Thndr', quantity: 400, avgCost: 20, price: 24.5, currency: 'EGP' },
+    { id: 'h3', asset: 'Telecom Egypt', symbol: 'ETEL', type: 'Stock', portfolio: 'Wealth', platform: 'Thndr', quantity: 300, avgCost: 20.13, price: 25.2, currency: 'EGP' },
+    { id: 'h4', asset: 'Abu Dhabi Islamic Bank', symbol: 'ADIB', type: 'Stock', portfolio: 'Wealth', platform: 'CIB', quantity: 180, avgCost: 36.06, price: 42.5, currency: 'EGP' },
+    { id: 'h5', asset: 'Elsewedy Electric', symbol: 'SWDY', type: 'Stock', portfolio: 'Retirement', platform: 'Thndr', quantity: 60, avgCost: 42.05, price: 48.8, currency: 'EGP' },
+    { id: 'h6', asset: 'Talaat Moustafa Group', symbol: 'TMGH', type: 'Stock', portfolio: 'Retirement', platform: 'Thndr', quantity: 45, avgCost: 53.44, price: 61.2, currency: 'EGP' },
+    { id: 'h7', asset: 'Sharia Equity Fund', symbol: 'CI-SHARIA', type: 'Fund', portfolio: 'Education', platform: 'CIB', quantity: 1000, avgCost: 10, price: 11.2, currency: 'EGP' },
+  ]);
+
+  const portfolios = [
+    { name: 'Wealth', type: 'Wealth', target: 60, value: 43800 },
+    { name: 'Retirement', type: 'Retirement', target: 25, value: 11900 },
+    { name: 'Education', type: 'Education', target: 15, value: 5800 },
+  ];
+  const platforms = [
+    { name: 'Thndr', type: 'Broker', value: 38200, holdings: 6 },
+    { name: 'CIB', type: 'Bank / Funds', value: 17100, holdings: 2 },
+    { name: 'Tilda', type: 'Investment platform', value: 6200, holdings: 0 },
+  ];
+  const activity = [
+    { date: '20 Sep 2026', action: 'Buy', asset: 'ORAS', portfolio: 'Wealth', platform: 'Thndr', amount: 5000 },
+    { date: '15 Sep 2026', action: 'Dividend', asset: 'ADIB', portfolio: 'Wealth', platform: 'CIB', amount: 780 },
+    { date: '10 Sep 2026', action: 'Buy', asset: 'CI-SHARIA', portfolio: 'Education', platform: 'CIB', amount: 3000 },
+    { date: '01 Sep 2026', action: 'Buy', asset: 'SWDY', portfolio: 'Retirement', platform: 'Thndr', amount: 2500 },
+  ];
+
+  const invested = holdings.reduce((sum, row) => sum + row.quantity * row.avgCost, 0);
+  const currentValue = holdings.reduce((sum, row) => sum + row.quantity * row.price, 0);
+  const unrealized = currentValue - invested;
+  const returnPct = invested ? (unrealized / invested) * 100 : 0;
+
+  function addHolding(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const quantity = Math.abs(Number(form.get('quantity') || 0));
+    const avgCost = Math.abs(Number(form.get('avgCost') || 0));
+    if (!String(form.get('asset') || '').trim() || quantity <= 0 || avgCost <= 0) return;
+    const price = Math.abs(Number(form.get('price') || avgCost));
+    setHoldings((rows) => [{
+      id: 'h-' + Date.now(),
+      asset: String(form.get('asset')),
+      symbol: String(form.get('symbol') || '').toUpperCase(),
+      type: String(form.get('type') || 'Stock'),
+      portfolio: String(form.get('portfolio') || 'Wealth'),
+      platform: String(form.get('platform') || 'Thndr'),
+      quantity, avgCost, price,
+      currency: String(form.get('currency') || 'EGP'),
+    }, ...rows]);
+    setShowAdd(false);
+  }
+
+  return (
+    <section className="space-y-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Investments</p>
+          <h2 className="mt-1 font-display text-3xl font-extrabold">Investments</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Track portfolios, platforms, holdings, transactions and performance.</p>
+        </div>
+        <button type="button" onClick={() => setShowAdd(true)} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm"><Plus className="size-4" /> Add investment</button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Card className="p-5"><p className="text-xs text-muted-foreground">Current value</p><p className="mt-2 text-2xl font-extrabold">{money(currentValue)}</p><p className="mt-1 text-[11px] text-muted-foreground">Across all portfolios</p></Card>
+        <Card className="p-5"><p className="text-xs text-muted-foreground">Invested</p><p className="mt-2 text-2xl font-extrabold">{money(invested)}</p><p className="mt-1 text-[11px] text-muted-foreground">Total cost basis</p></Card>
+        <Card className="p-5"><p className="text-xs text-muted-foreground">Unrealized gain</p><p className="mt-2 text-2xl font-extrabold text-primary">{money(unrealized)}</p><p className="mt-1 text-[11px] text-primary">+{returnPct.toFixed(1)}%</p></Card>
+        <Card className="p-5"><p className="text-xs text-muted-foreground">Holdings</p><p className="mt-2 text-2xl font-extrabold">{holdings.length}</p><p className="mt-1 text-[11px] text-muted-foreground">{platforms.length} platforms</p></Card>
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto rounded-2xl border border-border bg-card p-2">
+        {[['overview','Overview'],['portfolios','Portfolios'],['platforms','Platforms'],['assets','Assets'],['activity','Activity']].map(([value,label]) => (
+          <button key={value} type="button" onClick={() => setTab(value as InvestmentTab)} className={'shrink-0 rounded-xl px-4 py-2.5 text-xs font-bold ' + (tab === value ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted')}>{label}</button>
+        ))}
+      </div>
+
+      {tab === 'overview' && (
+        <div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
+          <Card className="p-5">
+            <div className="flex items-center justify-between"><div><h3 className="font-display text-xl font-extrabold">Holdings</h3><p className="mt-1 text-xs text-muted-foreground">Current value and unrealized performance.</p></div><button type="button" onClick={() => setTab('assets')} className="text-xs font-bold text-primary">View all</button></div>
+            <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead><tr className="border-b border-border text-left text-[10px] uppercase tracking-[0.08em] text-muted-foreground"><th className="px-3 py-3">Asset</th><th className="px-3 py-3">Portfolio</th><th className="px-3 py-3">Platform</th><th className="px-3 py-3 text-right">Value</th><th className="px-3 py-3 text-right">Return</th></tr></thead><tbody>
+              {holdings.map((row) => { const value = row.quantity * row.price; const gain = value - row.quantity * row.avgCost; const pct = row.avgCost ? (gain / (row.quantity * row.avgCost)) * 100 : 0; return <tr key={row.id} className="border-b border-border last:border-0"><td className="px-3 py-3"><p className="font-bold">{row.symbol || row.asset}</p><p className="text-[11px] text-muted-foreground">{row.asset}</p></td><td className="px-3 py-3 text-xs">{row.portfolio}</td><td className="px-3 py-3 text-xs">{row.platform}</td><td className="px-3 py-3 text-right font-bold">{money(value,row.currency)}</td><td className="px-3 py-3 text-right font-bold text-primary">+{pct.toFixed(1)}%</td></tr>; })}
+            </tbody></table></div>
+          </Card>
+          <div className="space-y-5">
+            <Card className="p-5"><h3 className="font-display text-xl font-extrabold">Allocation</h3><p className="mt-1 text-xs text-muted-foreground">By investment type.</p><div className="mt-5 space-y-4">
+              {[['Stocks', holdings.filter((row) => row.type === 'Stock').reduce((sum,row) => sum + row.quantity * row.price,0)],['Funds', holdings.filter((row) => row.type === 'Fund').reduce((sum,row) => sum + row.quantity * row.price,0)],['Other',0]].map(([label,value]) => { const pct = currentValue ? (Number(value)/currentValue)*100 : 0; return <div key={label as string}><div className="flex justify-between text-xs font-bold"><span>{label}</span><span>{pct.toFixed(1)}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{width:pct+'%'}} /></div><p className="mt-1 text-[11px] text-muted-foreground">{money(Number(value))}</p></div>; })}
+            </div></Card>
+            <Card className="p-5"><div className="flex items-center justify-between"><h3 className="font-display text-xl font-extrabold">Recent activity</h3><button type="button" onClick={() => setTab('activity')} className="text-xs font-bold text-primary">View all</button></div><div className="mt-3 divide-y divide-border">{activity.map((row) => <div key={row.date + row.asset} className="flex items-center justify-between gap-3 py-3"><div><p className="text-sm font-bold">{row.action} {row.asset}</p><p className="text-[11px] text-muted-foreground">{row.date} · {row.platform}</p></div><span className="text-sm font-bold">{money(row.amount)}</span></div>)}</div></Card>
+          </div>
+        </div>
+      )}
+
+      {tab === 'portfolios' && <Card className="p-5"><div className="flex items-center justify-between"><div><h3 className="font-display text-xl font-extrabold">Portfolios</h3><p className="mt-1 text-xs text-muted-foreground">Separate investment goals and track their value.</p></div><button type="button" className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-bold"><Plus className="size-3.5" /> New portfolio</button></div><div className="mt-5 grid gap-4 md:grid-cols-3">{portfolios.map((row) => <div key={row.name} className="rounded-2xl border border-border p-4"><div className="flex items-center justify-between"><div><p className="font-bold">{row.name}</p><p className="text-[11px] text-muted-foreground">{row.type}</p></div><span className="text-xs font-bold">{row.target}% target</span></div><p className="mt-5 text-2xl font-extrabold">{money(row.value)}</p><div className="mt-4 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{width:Math.min((row.value/currentValue)*100,100)+'%'}} /></div><p className="mt-2 text-[11px] text-muted-foreground">{holdings.filter((holding) => holding.portfolio === row.name).length} holdings</p></div>)}</div></Card>}
+
+      {tab === 'platforms' && <Card className="p-5"><div className="flex items-center justify-between"><div><h3 className="font-display text-xl font-extrabold">Platforms</h3><p className="mt-1 text-xs text-muted-foreground">Brokers, banks and investment platforms.</p></div><button type="button" className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-bold"><Plus className="size-3.5" /> Add platform</button></div><div className="mt-5 grid gap-4 md:grid-cols-3">{platforms.map((row) => <div key={row.name} className="rounded-2xl border border-border p-4"><p className="font-bold">{row.name}</p><p className="mt-1 text-[11px] text-muted-foreground">{row.type}</p><p className="mt-5 text-2xl font-extrabold">{money(row.value)}</p><p className="mt-2 text-[11px] text-muted-foreground">{row.holdings} holdings</p></div>)}</div></Card>}
+
+      {tab === 'assets' && <Card className="p-5"><div className="flex items-center justify-between"><div><h3 className="font-display text-xl font-extrabold">Assets</h3><p className="mt-1 text-xs text-muted-foreground">Stocks, funds and other investment assets.</p></div><button type="button" onClick={() => setShowAdd(true)} className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-bold"><Plus className="size-3.5" /> Add holding</button></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b border-border text-left text-[10px] uppercase tracking-[0.08em] text-muted-foreground"><th className="px-3 py-3">Asset</th><th className="px-3 py-3">Type</th><th className="px-3 py-3">Qty</th><th className="px-3 py-3 text-right">Avg cost</th><th className="px-3 py-3 text-right">Price</th><th className="px-3 py-3 text-right">Value</th></tr></thead><tbody>{holdings.map((row) => <tr key={row.id} className="border-b border-border last:border-0"><td className="px-3 py-3"><p className="font-bold">{row.symbol || row.asset}</p><p className="text-[11px] text-muted-foreground">{row.asset}</p></td><td className="px-3 py-3 text-xs">{row.type}</td><td className="px-3 py-3">{row.quantity}</td><td className="px-3 py-3 text-right">{money(row.avgCost,row.currency)}</td><td className="px-3 py-3 text-right">{money(row.price,row.currency)}</td><td className="px-3 py-3 text-right font-bold">{money(row.quantity*row.price,row.currency)}</td></tr>)}</tbody></table></div></Card>}
+
+      {tab === 'activity' && <Card className="p-5"><div><h3 className="font-display text-xl font-extrabold">Investment activity</h3><p className="mt-1 text-xs text-muted-foreground">Buy, sell and dividend transactions.</p></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[700px] text-sm"><thead><tr className="border-b border-border text-left text-[10px] uppercase tracking-[0.08em] text-muted-foreground"><th className="px-3 py-3">Date</th><th className="px-3 py-3">Action</th><th className="px-3 py-3">Asset</th><th className="px-3 py-3">Portfolio</th><th className="px-3 py-3">Platform</th><th className="px-3 py-3 text-right">Amount</th></tr></thead><tbody>{activity.map((row) => <tr key={row.date+row.asset} className="border-b border-border last:border-0"><td className="px-3 py-3 text-xs">{row.date}</td><td className="px-3 py-3 font-bold">{row.action}</td><td className="px-3 py-3 font-bold">{row.asset}</td><td className="px-3 py-3 text-xs">{row.portfolio}</td><td className="px-3 py-3 text-xs">{row.platform}</td><td className="px-3 py-3 text-right font-bold">{money(row.amount)}</td></tr>)}</tbody></table></div></Card>}
+
+      {showAdd && <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4"><div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-border bg-background p-6 shadow-2xl"><div className="flex items-center justify-between"><div><h3 className="font-display text-2xl font-extrabold">Add investment holding</h3><p className="mt-1 text-xs text-muted-foreground">Create the holding now. Buy and sell transaction history will be connected next.</p></div><button type="button" onClick={() => setShowAdd(false)} className="grid size-9 place-items-center rounded-xl border border-border"><X className="size-4" /></button></div><form onSubmit={addHolding} className="mt-5 grid gap-4 sm:grid-cols-2">
+        <label className="text-xs font-bold">Asset name<input name="asset" required className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" placeholder="e.g. Orascom Construction" /></label>
+        <label className="text-xs font-bold">Symbol<input name="symbol" className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal uppercase" placeholder="ORAS" /></label>
+        <label className="text-xs font-bold">Type<select name="type" className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"><option>Stock</option><option>Fund</option><option>ETF</option><option>Bond</option><option>Gold</option><option>Certificate</option><option>Crypto</option><option>Other</option></select></label>
+        <label className="text-xs font-bold">Currency<select name="currency" className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"><option>EGP</option><option>USD</option><option>SAR</option><option>AED</option></select></label>
+        <label className="text-xs font-bold">Portfolio<select name="portfolio" className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal">{portfolios.map((row) => <option key={row.name}>{row.name}</option>)}</select></label>
+        <label className="text-xs font-bold">Platform<select name="platform" className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal">{platforms.map((row) => <option key={row.name}>{row.name}</option>)}</select></label>
+        <label className="text-xs font-bold">Quantity<input name="quantity" type="number" min="0" step="any" required className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" /></label>
+        <label className="text-xs font-bold">Average cost / unit<input name="avgCost" type="number" min="0" step="any" required className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" /></label>
+        <label className="text-xs font-bold">Current price / unit<input name="price" type="number" min="0" step="any" className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" /></label>
+        <div className="sm:col-span-2 flex justify-end gap-2 pt-2"><button type="button" onClick={() => setShowAdd(false)} className="h-11 rounded-xl border border-border px-4 text-sm font-bold">Cancel</button><button type="submit" className="h-11 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground">Add holding</button></div>
+      </form></div></div>}
+    </section>
+  );
+}
+
 function TransactionsPreview() {
   type EntryMode = 'expense' | 'income' | 'transfer' | 'planned';
   type LineItem = { id: string; itemId: string; name: string; category: string; amount: number };
@@ -1627,14 +1751,7 @@ export default function MoneyProPreview() {
             )}
 
             {screen === 'investments' && (
-              <section className="space-y-5">
-                <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Investments</p><h2 className="mt-1 font-display text-3xl font-extrabold">Investments</h2><p className="mt-1 text-sm text-muted-foreground">Portfolios, platforms, assets and investment activity.</p></div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <Card className="p-5"><p className="text-xs text-muted-foreground">Portfolios</p><p className="mt-2 text-2xl font-extrabold">0</p></Card>
-                  <Card className="p-5"><p className="text-xs text-muted-foreground">Platforms</p><p className="mt-2 text-2xl font-extrabold">0</p></Card>
-                  <Card className="p-5"><p className="text-xs text-muted-foreground">Investment value</p><p className="mt-2 text-2xl font-extrabold">{money(0)}</p></Card>
-                </div>
-              </section>
+              <InvestmentsPreview />
             )}
 
             {screen === 'calendar' && (
