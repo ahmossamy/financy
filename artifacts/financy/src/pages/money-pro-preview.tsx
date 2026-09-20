@@ -134,32 +134,27 @@ function TransactionsPreview() {
   const [accountFilter, setAccountFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'cleared' | 'not-cleared' | 'planned'>('all');
-  const [classFilter, setClassFilter] = useState('all');
   const [period, setPeriod] = useState<'this-month' | 'last-month' | '30-days' | 'custom'>('this-month');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [search, setSearch] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
   const [selected, setSelected] = useState<TransactionRecord | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [entryMode, setEntryMode] = useState<EntryMode>('expense');
   const [lineItems, setLineItems] = useState<LineItem[]>([
     { id: 'item-1', name: '', category: 'Food & Dining', amount: 0 },
   ]);
-  const itemTotal = lineItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [newCategory, setNewCategory] = useState('');
   const [showCategoryManager, setShowCategoryManager] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
+  const [showMoreDetails, setShowMoreDetails] = useState(false);
 
-  const accounts = Array.from(new Set(rows.map((row) => row.account)));
-  const classes = Array.from(new Set(rows.map((row) => row.className ?? 'Personal')));
-
-  function transactionDate(value: string) {
-    return new Date(value + ' 2026');
-  }
+  const accountOptions = accountRows.map((account) => account.name);
+  const categoriesForFilter = Array.from(new Set([
+    ...categories,
+    ...rows.map((row) => row.category),
+  ]));
+  const itemTotal = lineItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
   const filtered = useMemo(() => {
     const now = new Date(2026, 8, 20);
@@ -179,25 +174,32 @@ function TransactionsPreview() {
     }
 
     return rows.filter((row) => {
-      const date = transactionDate(row.date);
-      const text = [row.title, row.account, row.category, row.payee, row.description, row.checkNumber].join(' ').toLowerCase();
+      const date = new Date(row.date + ' 2026');
+      const text = [
+        row.title,
+        row.account,
+        row.category,
+        row.payee,
+        row.description,
+        row.checkNumber,
+      ].join(' ').toLowerCase();
+
       return (
         date >= startDate &&
         date <= endDate &&
         (typeFilter === 'all' || row.type === typeFilter) &&
-        (accountFilter === 'all' || row.account === accountFilter) &&
+        (accountFilter === 'all' || row.account === accountFilter || row.account.startsWith(accountFilter + ' ')) &&
         (categoryFilter === 'all' || row.category === categoryFilter) &&
         (statusFilter === 'all' || row.status === statusFilter) &&
-        (classFilter === 'all' || row.className === classFilter) &&
         (!search || text.includes(search.toLowerCase()))
       );
     });
-  }, [rows, typeFilter, accountFilter, categoryFilter, statusFilter, classFilter, period, fromDate, toDate, search]);
+  }, [rows, typeFilter, accountFilter, categoryFilter, statusFilter, period, fromDate, toDate, search]);
 
   const totals = filtered.reduce(
     (acc, row) => {
       if (row.status === 'planned') return acc;
-      if (row.type === 'income') acc.income += row.amount;
+      if (row.type === 'income') acc.income += Math.abs(row.amount);
       if (row.type === 'expense') acc.expenses += Math.abs(row.amount);
       return acc;
     },
@@ -208,15 +210,20 @@ function TransactionsPreview() {
     setEntryMode('expense');
     setLineItems([{ id: 'item-' + Date.now(), name: '', category: categories[0] ?? 'Other', amount: 0 }]);
     setAttachments([]);
-    setShowCategoryManager(false);
-    setShowAdvanced(false);
-    setShowDetails(false);
     setNewCategory('');
+    setShowCategoryManager(false);
+    setShowMoreDetails(false);
   }
 
   function openAdd() {
     resetAddForm();
     setShowAdd(true);
+  }
+
+  function closeAdd() {
+    setShowAdd(false);
+    setShowCategoryManager(false);
+    setShowMoreDetails(false);
   }
 
   function addLineItem() {
@@ -243,7 +250,9 @@ function TransactionsPreview() {
     const value = newCategory.trim();
     if (!value || categories.some((category) => category.toLowerCase() === value.toLowerCase())) return;
     setCategories((items) => [...items, value]);
-    setLineItems((items) => items.map((item, index) => index === items.length - 1 && !item.name ? { ...item, category: value } : item));
+    setLineItems((items) =>
+      items.map((item, index) => index === items.length - 1 && !item.name ? { ...item, category: value } : item),
+    );
     setNewCategory('');
   }
 
@@ -259,21 +268,26 @@ function TransactionsPreview() {
   function addTransaction(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+
     const selectedMode = entryMode;
-    const enteredAmount = Math.abs(Number(form.get('amount') || 0));
-    const amount = selectedMode === 'expense' ? itemTotal : enteredAmount;
+    const typedAmount = Math.abs(Number(form.get('amount') || 0));
+    const amount = selectedMode === 'expense' ? itemTotal : typedAmount;
     if (amount <= 0) return;
+
     const plannedType = String(form.get('plannedType') || 'expense') as 'expense' | 'income';
     const type = (selectedMode === 'planned' ? plannedType : selectedMode) as TransactionRecord['type'];
-    const account = String(form.get('account') || 'CIB');
+    const account = String(form.get('account') || 'Cash');
     const transferTo = String(form.get('transferTo') || '');
-    const method = String(form.get('method') || account);
     const fee = Math.abs(Number(form.get('fee') || 0));
-    const exchangeRate = Number(form.get('exchangeRate') || 1);
-    const receivedAmount = Math.abs(Number(form.get('receivedAmount') || amount));
-    const title = lineItems.length > 1
-      ? lineItems.filter((item) => item.name.trim()).map((item) => item.name.trim()).join(', ') || (type === 'income' ? 'Income' : type === 'transfer' ? 'Transfer' : 'Expense')
-      : lineItems[0]?.name.trim() || lineItems[0]?.category || (type === 'income' ? 'Income' : type === 'transfer' ? 'Transfer' : 'Transaction');
+    const date = String(form.get('date') || '2026-09-20');
+    const title = String(form.get('title') || (
+      lineItems.length > 1
+        ? lineItems.filter((item) => item.name.trim()).map((item) => item.name.trim()).join(', ')
+        : lineItems[0]?.name.trim()
+    ) || (
+      type === 'income' ? 'Income' : type === 'transfer' ? 'Transfer' : 'Expense'
+    ));
+
     const category = selectedMode === 'income'
       ? String(form.get('incomeCategory') || 'Other')
       : selectedMode === 'transfer'
@@ -281,10 +295,6 @@ function TransactionsPreview() {
         : selectedMode === 'planned'
           ? String(form.get('plannedCategory') || 'Other')
           : lineItems.length > 1 ? 'Multiple items' : lineItems[0]?.category || 'Other';
-    const date = String(form.get('date') || '2026-09-20');
-    const status = selectedMode === 'planned'
-      ? 'planned'
-      : String(form.get('status') || 'cleared') as TransactionRecord['status'];
 
     const record: TransactionRecord = {
       id: 'tx-' + Date.now(),
@@ -298,397 +308,407 @@ function TransactionsPreview() {
       description: String(form.get('description') || ''),
       className: String(form.get('className') || 'Personal'),
       checkNumber: String(form.get('checkNumber') || ''),
-      status,
+      status: selectedMode === 'planned'
+        ? 'planned'
+        : String(form.get('status') || 'cleared') as TransactionRecord['status'],
       recurring: form.get('recurring') === 'on',
       items: lineItems.filter((item) => item.name.trim() || item.amount > 0),
       attachments,
-      method,
+      method: String(form.get('method') || account),
       fee,
       transferTo,
-      exchangeRate,
-      receivedAmount,
+      exchangeRate: Number(form.get('exchangeRate') || 1),
+      receivedAmount: Math.abs(Number(form.get('receivedAmount') || amount)),
     };
 
     setRows((current) => [record, ...current]);
     setShowAdd(false);
   }
 
+  function typeBadge(type: TransactionRecord['type']) {
+    const map = {
+      expense: 'bg-red-100 text-red-700',
+      income: 'bg-emerald-100 text-emerald-700',
+      transfer: 'bg-blue-100 text-blue-700',
+    };
+    return map[type];
+  }
+
   return (
     <section className="space-y-5">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Checkbook register</p>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Money</p>
           <h2 className="mt-1 font-display text-3xl font-extrabold">Transactions</h2>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">One transaction can contain multiple items, its own payment method, fees and attachments.</p>
+          <p className="mt-1 text-sm text-muted-foreground">All income, expenses, transfers and planned transactions in one register.</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowFilters((value) => !value)} className={'inline-flex h-11 items-center gap-2 rounded-2xl border px-4 text-sm font-bold ' + (showFilters ? 'border-primary bg-primary/5 text-primary' : 'border-border')}>
-            <Filter className="size-4" /> Filters
-          </button>
-          <button onClick={openAdd} className="inline-flex h-11 items-center gap-2 rounded-2xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm">
-            <Plus className="size-4" /> Add transaction
-          </button>
-        </div>
+        <button
+          onClick={openAdd}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm hover:opacity-95"
+        >
+          <Plus className="size-4" /> Add transaction
+        </button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Card className="p-4"><p className="text-xs font-semibold text-muted-foreground">Income</p><p className="mt-2 font-display text-2xl font-extrabold text-primary">{money(totals.income)}</p></Card>
-        <Card className="p-4"><p className="text-xs font-semibold text-muted-foreground">Expenses</p><p className="mt-2 font-display text-2xl font-extrabold">{money(totals.expenses)}</p></Card>
-        <Card className="p-4"><p className="text-xs font-semibold text-muted-foreground">Cash flow</p><p className="mt-2 font-display text-2xl font-extrabold">{money(totals.income - totals.expenses)}</p></Card>
+      <Card className="p-4">
+        <div className="grid gap-2 md:grid-cols-[1.6fr_repeat(4,minmax(0,1fr))]">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search transactions..."
+              className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary"
+            />
+          </div>
+          <select value={period} onChange={(event) => setPeriod(event.target.value as typeof period)} className="h-10 rounded-xl border border-border bg-background px-3 text-sm font-semibold">
+            <option value="this-month">This month</option>
+            <option value="last-month">Last month</option>
+            <option value="30-days">Last 30 days</option>
+            <option value="custom">Custom period</option>
+          </select>
+          <select value={accountFilter} onChange={(event) => setAccountFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-sm font-semibold">
+            <option value="all">All accounts</option>
+            {accountOptions.map((account) => <option key={account}>{account}</option>)}
+          </select>
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-sm font-semibold">
+            <option value="all">All categories</option>
+            {categoriesForFilter.map((category) => <option key={category}>{category}</option>)}
+          </select>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="h-10 rounded-xl border border-border bg-background px-3 text-sm font-semibold">
+            <option value="all">All statuses</option>
+            <option value="cleared">Cleared</option>
+            <option value="not-cleared">Not cleared</option>
+            <option value="planned">Planned</option>
+          </select>
+        </div>
+
+        {period === 'custom' && (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-sm" />
+            <input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-sm" />
+          </div>
+        )}
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          {[
+            ['all', 'All'],
+            ['income', 'Income'],
+            ['expense', 'Expenses'],
+            ['transfer', 'Transfers'],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() => setTypeFilter(value as typeof typeFilter)}
+              className={'rounded-lg px-3 py-2 text-xs font-bold ' + (
+                typeFilter === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              setSearch('');
+              setPeriod('this-month');
+              setAccountFilter('all');
+              setCategoryFilter('all');
+              setStatusFilter('all');
+              setTypeFilter('all');
+              setFromDate('');
+              setToDate('');
+            }}
+            className="rounded-lg border border-border px-3 py-2 text-xs font-bold"
+          >
+            Reset
+          </button>
+        </div>
+      </Card>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Card className="p-4"><p className="text-xs text-muted-foreground">Total income</p><p className="mt-2 text-2xl font-extrabold text-emerald-600">{money(totals.income)}</p></Card>
+        <Card className="p-4"><p className="text-xs text-muted-foreground">Total expenses</p><p className="mt-2 text-2xl font-extrabold text-red-600">{money(totals.expenses)}</p></Card>
+        <Card className="p-4"><p className="text-xs text-muted-foreground">Net cash flow</p><p className="mt-2 text-2xl font-extrabold">{money(totals.income - totals.expenses)}</p></Card>
+        <Card className="p-4"><p className="text-xs text-muted-foreground">Transactions</p><p className="mt-2 text-2xl font-extrabold">{filtered.length}</p></Card>
       </div>
 
       <Card className="overflow-hidden">
-        <div className="border-b border-border bg-muted/20 p-4">
-          <div className="flex flex-wrap gap-2">
-            {[
-              ['all', 'All'],
-              ['income', 'Income'],
-              ['expense', 'Expenses'],
-              ['transfer', 'Transfers'],
-            ].map(([value, label]) => (
-              <button key={value} onClick={() => setTypeFilter(value as typeof typeFilter)} className={'rounded-xl px-3 py-2 text-xs font-bold ' + (typeFilter === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground')}>{label}</button>
-            ))}
-          </div>
-
-          <div className="mt-3 flex flex-col gap-3 lg:flex-row">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search amount, category, description, payee..." className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 text-xs outline-none focus:border-primary" />
-            </div>
-            <select value={period} onChange={(event) => setPeriod(event.target.value as typeof period)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs font-semibold">
-              <option value="this-month">This month</option>
-              <option value="last-month">Last month</option>
-              <option value="30-days">Last 30 days</option>
-              <option value="custom">Custom period</option>
-            </select>
-          </div>
-
-          {period === 'custom' && (
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs" />
-              <input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs" />
-            </div>
-          )}
-
-          {showFilters && (
-            <div className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2 lg:grid-cols-4">
-              <select value={accountFilter} onChange={(event) => setAccountFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs">
-                <option value="all">All accounts</option>{accounts.map((account) => <option key={account}>{account}</option>)}
-              </select>
-              <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs">
-                <option value="all">All categories</option>{categories.map((category) => <option key={category}>{category}</option>)}
-              </select>
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs">
-                <option value="all">All statuses</option><option value="cleared">Cleared</option><option value="not-cleared">Not cleared</option><option value="planned">Planned</option>
-              </select>
-              <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs">
-                <option value="all">All classes</option>{classes.map((item) => <option key={item}>{item}</option>)}
-              </select>
-            </div>
-          )}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[930px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/40 text-left text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Description</th>
+                <th className="px-4 py-3">Category</th>
+                <th className="px-4 py-3">Account</th>
+                <th className="px-4 py-3 text-right">Amount</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-center">Att.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((row) => (
+                <tr
+                  key={row.id}
+                  onClick={() => setSelected(row)}
+                  className="cursor-pointer border-b border-border last:border-0 hover:bg-primary/[0.03]"
+                >
+                  <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">{row.date} 2026</td>
+                  <td className="px-4 py-3">
+                    <span className={'inline-flex rounded-md px-2 py-1 text-[10px] font-bold ' + typeBadge(row.type)}>
+                      {row.type === 'expense' ? 'Expense' : row.type === 'income' ? 'Income' : 'Transfer'}
+                    </span>
+                  </td>
+                  <td className="max-w-[250px] px-4 py-3 font-semibold">{row.title}</td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex rounded-md bg-muted px-2 py-1 text-[10px] font-semibold">{row.category}</span>
+                  </td>
+                  <td className="px-4 py-3 text-xs font-semibold">{row.account}</td>
+                  <td className={'px-4 py-3 text-right font-extrabold ' + (row.amount >= 0 ? 'text-emerald-600' : 'text-red-600')}>
+                    {row.amount >= 0 ? '+' : ''}{money(row.amount)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={'inline-flex rounded-md px-2 py-1 text-[10px] font-bold ' + (
+                      row.status === 'cleared' ? 'bg-emerald-100 text-emerald-700' :
+                      row.status === 'planned' ? 'bg-amber-100 text-amber-700' :
+                      'bg-slate-100 text-slate-700'
+                    )}>
+                      {row.status === 'cleared' ? 'Paid' : row.status === 'planned' ? 'Planned' : 'Not cleared'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center text-muted-foreground">{row.attachments?.length ? '📎' : '—'}</td>
+                </tr>
+              ))}
+              {!filtered.length && (
+                <tr>
+                  <td colSpan={8} className="px-6 py-16 text-center text-sm text-muted-foreground">No transactions match the selected filters.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-
-        <div className="divide-y divide-border">
-          {filtered.map((row) => (
-            <button key={row.id} onClick={() => setSelected(row)} className="flex w-full items-start gap-3 px-4 py-4 text-left hover:bg-primary/[0.03] sm:px-5">
-              <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted">
-                {row.type === 'income' && <ArrowDownLeft className="size-4 text-primary" />}
-                {row.type === 'expense' && <ArrowUpRight className="size-4" />}
-                {row.type === 'transfer' && <ArrowLeftRight className="size-4 text-primary" />}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-bold">{row.title}</p>
-                  {row.recurring && <span className="rounded-full bg-secondary px-2 py-0.5 text-[9px] font-bold">Recurring</span>}
-                  {row.status === 'planned' && <span className="rounded-full bg-muted px-2 py-0.5 text-[9px] font-bold">Planned</span>}
-                </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">{row.date} · {row.account} · {row.category}</p>
-                {row.payee && <p className="mt-1 text-[11px] text-muted-foreground">{row.payee}</p>}
-              </div>
-              <div className="text-right">
-                <p className={'text-sm font-extrabold ' + (row.amount >= 0 ? 'text-primary' : 'text-destructive')}>{row.amount >= 0 ? '+' : ''}{money(row.amount)}</p>
-                <p className="mt-1 text-[10px] text-muted-foreground">{row.status === 'cleared' ? 'Cleared' : row.status === 'planned' ? 'Planned' : 'Not cleared'}</p>
-              </div>
-            </button>
-          ))}
-          {filtered.length === 0 && <div className="px-6 py-14 text-center text-sm text-muted-foreground">No transactions match the selected filters.</div>}
+        <div className="flex items-center justify-between border-t border-border px-4 py-3 text-xs text-muted-foreground">
+          <span>Showing {filtered.length} transactions</span>
+          <div className="flex items-center gap-2">
+            <button type="button" className="grid size-8 place-items-center rounded-lg border border-border">‹</button>
+            <button type="button" className="grid size-8 place-items-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">1</button>
+            <button type="button" className="grid size-8 place-items-center rounded-lg border border-border">2</button>
+            <button type="button" className="grid size-8 place-items-center rounded-lg border border-border">›</button>
+          </div>
         </div>
       </Card>
 
       {selected && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center">
-          <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-border bg-card shadow-2xl">
-            <div className="flex items-start justify-between border-b border-border px-6 py-5">
-              <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Transaction details</p><h3 className="mt-1 font-display text-2xl font-extrabold">{selected.title}</h3><p className="mt-1 text-xs text-muted-foreground">{selected.date} · {selected.account}</p></div>
-              <button onClick={() => setSelected(null)} className="grid size-9 place-items-center rounded-xl hover:bg-muted"><X className="size-5" /></button>
-            </div>
-            <div className="space-y-4 p-6">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Amount</p><p className={'mt-2 font-display text-2xl font-extrabold ' + (selected.amount >= 0 ? 'text-primary' : 'text-destructive')}>{selected.amount >= 0 ? '+' : ''}{money(selected.amount)}</p></Card>
-                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Method</p><p className="mt-2 text-sm font-bold">{selected.method || selected.account}</p></Card>
+        <div className="fixed inset-0 z-[70] bg-foreground/20 p-3 backdrop-blur-sm">
+          <div className="mx-auto mt-8 max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-3xl border border-border bg-card shadow-2xl">
+            <div className="flex items-start justify-between border-b border-border px-5 py-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Transaction details</p>
+                <h3 className="mt-1 text-xl font-extrabold">{selected.title}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">{selected.date} · {selected.account}</p>
               </div>
-              {!!selected.items?.length && (
-                <Card className="p-4">
-                  <p className="text-[11px] text-muted-foreground">Items</p>
-                  <div className="mt-3 divide-y divide-border">{selected.items.map((item: LineItem) => <div key={item.id} className="flex items-center justify-between py-2 text-sm"><div><p className="font-semibold">{item.name || item.category}</p><p className="text-[10px] text-muted-foreground">{item.category}</p></div><p className="font-bold">{money(item.amount)}</p></div>)}</div>
-                </Card>
-              )}
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Type</p><p className="mt-2 text-sm font-bold capitalize">{selected.type}</p></Card>
-                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Status</p><p className="mt-2 text-sm font-bold">{selected.status}</p></Card>
-                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Category</p><p className="mt-2 text-sm font-bold">{selected.category}</p></Card>
-                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Fee</p><p className="mt-2 text-sm font-bold">{money(selected.fee || 0)}</p></Card>
-              </div>
-              {selected.attachments?.length ? <Card className="p-4"><p className="text-[11px] text-muted-foreground">Attachments</p><div className="mt-2 space-y-1">{selected.attachments.map((file: Attachment) => <p key={file.name} className="text-xs font-semibold">{file.name}</p>)}</div></Card> : null}
-              <Card className="p-4"><p className="text-[11px] text-muted-foreground">Payee / Description</p><p className="mt-2 text-sm font-bold">{selected.payee || '—'}</p><p className="mt-1 text-xs text-muted-foreground">{selected.description || '—'}</p></Card>
+              <button type="button" onClick={() => setSelected(null)} className="grid size-9 place-items-center rounded-xl hover:bg-muted"><X className="size-5" /></button>
             </div>
-            <div className="flex justify-end border-t border-border p-4"><button onClick={() => setSelected(null)} className="h-10 rounded-xl border border-border px-4 text-xs font-bold">Close</button></div>
+            <div className="space-y-3 p-5">
+              <Card className="p-4"><p className="text-xs text-muted-foreground">Amount</p><p className={'mt-2 text-3xl font-extrabold ' + (selected.amount >= 0 ? 'text-emerald-600' : 'text-red-600')}>{selected.amount >= 0 ? '+' : ''}{money(selected.amount)}</p></Card>
+              {selected.items?.length ? <Card className="p-4"><p className="text-xs font-bold">Items</p><div className="mt-2 divide-y divide-border">{selected.items.map((item) => <div key={item.id} className="flex items-center justify-between py-2"><div><p className="text-sm font-semibold">{item.name || item.category}</p><p className="text-[10px] text-muted-foreground">{item.category}</p></div><span className="font-bold">{money(item.amount)}</span></div>)}</div></Card> : null}
+              {selected.attachments?.length ? <Card className="p-4"><p className="text-xs font-bold">Attachments</p><div className="mt-2 space-y-1">{selected.attachments.map((file) => <p key={file.name} className="text-xs font-semibold">{file.name}</p>)}</div></Card> : null}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Type</p><p className="mt-1 text-sm font-bold capitalize">{selected.type}</p></Card>
+                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Status</p><p className="mt-1 text-sm font-bold">{selected.status}</p></Card>
+                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Category</p><p className="mt-1 text-sm font-bold">{selected.category}</p></Card>
+                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Fee</p><p className="mt-1 text-sm font-bold">{money(selected.fee || 0)}</p></Card>
+              </div>
+              <Card className="p-4"><p className="text-[11px] text-muted-foreground">Payee / Description</p><p className="mt-1 text-sm font-bold">{selected.payee || '—'}</p><p className="mt-1 text-xs text-muted-foreground">{selected.description || '—'}</p></Card>
+            </div>
           </div>
         </div>
       )}
 
       {showAdd && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/45 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="flex max-h-[96vh] w-full max-w-md flex-col overflow-hidden rounded-t-[2rem] border border-border bg-[#224f55] text-white shadow-2xl sm:rounded-[2rem]">
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center border-b border-white/15 px-4 py-3 sm:px-5">
-              <button type="button" onClick={() => setShowAdd(false)} className="justify-self-start text-sm font-medium text-white/80 hover:text-white">Cancel</button>
+        <div className="fixed inset-0 z-[80] flex justify-end bg-foreground/25 backdrop-blur-sm">
+          <div className="flex h-full w-full max-w-[470px] flex-col border-l border-border bg-background shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-5 py-4">
+              <button type="button" onClick={closeAdd} className="text-sm font-medium text-muted-foreground hover:text-foreground">Cancel</button>
               <div className="text-center">
-                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/55">Checkbook</p>
-                <h3 className="mt-0.5 text-lg font-extrabold">
+                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-primary">Checkbook</p>
+                <h3 className="text-lg font-extrabold">
                   {entryMode === 'expense' ? 'Expense' : entryMode === 'income' ? 'Income' : entryMode === 'transfer' ? 'Money Transfer' : 'Planned'}
                 </h3>
               </div>
-              <button type="submit" form="transaction-form" className="justify-self-end text-sm font-bold text-white/80 hover:text-white">Save</button>
+              <button type="submit" form="transaction-form" className="text-sm font-bold text-primary">Save</button>
             </div>
 
-            <form id="transaction-form" onSubmit={addTransaction} className="min-h-0 overflow-y-auto">
-              <div className="border-b border-white/10 px-3 py-2">
-                <div className="grid grid-cols-4 rounded-xl bg-black/10 p-1">
+            <form id="transaction-form" onSubmit={addTransaction} className="min-h-0 flex-1 overflow-y-auto">
+              <div className="border-b border-border bg-card px-4 py-3">
+                <div className="grid grid-cols-4 overflow-hidden rounded-xl border border-border">
                   {[
                     ['expense', 'Expense'],
                     ['income', 'Income'],
                     ['transfer', 'Transfer'],
                     ['planned', 'Planned'],
                   ].map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setEntryMode(value as EntryMode)}
-                      className={'rounded-lg px-2 py-2 text-[11px] font-bold transition-colors ' + (
-                        entryMode === value ? 'bg-white/10 text-white' : 'text-white/55 hover:text-white'
-                      )}
-                    >
+                    <button key={value} type="button" onClick={() => setEntryMode(value as EntryMode)} className={'px-2 py-3 text-xs font-bold ' + (entryMode === value ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:text-foreground')}>
                       {label}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div className="px-4 py-3">
+              <div className="space-y-3 p-4">
                 {entryMode === 'expense' && (
-                  <div className="overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
-                    <div className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
-                      <div className="min-w-0">
-                        <p className="text-[10px] text-white/55">Paid from</p>
-                        <p className="mt-1 truncate text-sm font-semibold">{accountRows[0]?.name ?? 'Account'}</p>
-                      </div>
-                      <select name="account" defaultValue={accountRows[0]?.name} className="max-w-[52%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none">
-                        {accountRows.map((account) => <option key={account.name} className="text-black">{account.name}</option>)}
-                      </select>
-                    </div>
-                    <button type="button" onClick={() => setShowCategoryManager(true)} className="flex min-h-14 w-full items-center justify-between gap-3 border-b border-white/10 px-4 text-left hover:bg-white/[0.03]">
-                      <div>
-                        <p className="text-[10px] text-white/55">Category</p>
-                        <p className="mt-1 text-sm font-semibold">{lineItems.length === 1 ? lineItems[0]?.category : 'Multiple categories'}</p>
-                      </div>
-                      <ChevronRight className="size-4 text-white/45" />
-                    </button>
-                    <div className="flex min-h-16 items-center justify-between gap-3 px-4">
-                      <div>
-                        <p className="text-[10px] text-white/55">Amount</p>
-                        <p className="mt-1 text-xs font-semibold text-white/55">EGP</p>
-                      </div>
-                      <p className="text-3xl font-extrabold tracking-tight">{money(itemTotal)}</p>
-                    </div>
-                  </div>
-                )}
-
-                {entryMode === 'income' && (
                   <>
-                    <div className="overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
-                      <div className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
-                        <div><p className="text-[10px] text-white/55">Deposit to</p><p className="mt-1 text-sm font-semibold">Account</p></div>
-                        <select name="account" defaultValue={accountRows[0]?.name} className="max-w-[55%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none">
-                          {accountRows.map((account) => <option key={account.name} className="text-black">{account.name}</option>)}
+                    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+                      <div className="flex min-h-14 items-center justify-between border-b border-border px-4">
+                        <span className="text-sm font-semibold">Account</span>
+                        <select name="account" defaultValue={accountOptions[0]} className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none">
+                          {accountRows.map((account) => <option key={account.name}>{account.name}</option>)}
                         </select>
                       </div>
-                      <div className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
-                        <div><p className="text-[10px] text-white/55">Source</p><p className="mt-1 text-sm font-semibold">Income source</p></div>
-                        <input name="payee" placeholder="Salary, client, dividend..." className="max-w-[55%] rounded-lg bg-black/10 px-2 py-2 text-right text-sm outline-none placeholder:text-white/35" />
-                      </div>
-                      <div className="flex min-h-16 items-center justify-between gap-3 px-4">
-                        <div><p className="text-[10px] text-white/55">Category</p><p className="mt-1 text-sm font-semibold">Choose category</p></div>
-                        <select name="incomeCategory" className="max-w-[55%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none">
-                          {categories.map((category) => <option key={category} className="text-black">{category}</option>)}
-                        </select>
+                      <button type="button" onClick={() => setShowCategoryManager(true)} className="flex min-h-14 w-full items-center justify-between border-b border-border px-4 text-left">
+                        <span className="text-sm font-semibold">Category</span>
+                        <span className="text-sm text-muted-foreground">{lineItems.length === 1 ? lineItems[0]?.category : 'Multiple categories'} <ChevronRight className="ml-1 inline size-4" /></span>
+                      </button>
+                      <div className="flex min-h-16 items-center justify-between px-4">
+                        <span className="text-sm font-semibold">Amount</span>
+                        <span className="text-3xl font-extrabold">{money(itemTotal)}</span>
                       </div>
                     </div>
-                    <div className="mt-3 rounded-2xl border border-white/15 bg-white/[0.03] px-4 py-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div><p className="text-[10px] text-white/55">Income amount</p><p className="mt-1 text-xs font-semibold text-white/55">EGP</p></div>
-                        <input name="amount" type="number" min="0" step="0.01" required placeholder="0" className="w-full max-w-[70%] bg-transparent text-right text-4xl font-extrabold tracking-tight outline-none placeholder:text-white/25" />
+
+                    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+                      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                        <div><p className="text-sm font-bold">Items</p><p className="text-[10px] text-muted-foreground">Add several purchases to one transaction.</p></div>
+                        <button type="button" onClick={addLineItem} className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-2 text-[10px] font-bold"><Plus className="size-3.5" /> Add item</button>
+                      </div>
+                      <div className="divide-y divide-border">
+                        {lineItems.map((item, index) => (
+                          <div key={item.id} className="space-y-2 p-3">
+                            <div className="flex gap-2">
+                              <input value={item.name} onChange={(event) => updateLineItem(item.id, { name: event.target.value })} placeholder={'Item ' + (index + 1)} className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm" />
+                              {lineItems.length > 1 && <button type="button" onClick={() => removeLineItem(item.id)} className="grid size-10 place-items-center rounded-lg border border-border text-muted-foreground">×</button>}
+                            </div>
+                            <div className="grid grid-cols-[1fr_110px] gap-2">
+                              <select value={item.category} onChange={(event) => updateLineItem(item.id, { category: event.target.value })} className="h-10 rounded-lg border border-border bg-background px-2 text-sm">{categories.map((category) => <option key={category}>{category}</option>)}</select>
+                              <input value={item.amount || ''} onChange={(event) => updateLineItem(item.id, { amount: Number(event.target.value) || 0 })} type="number" min="0" step="0.01" placeholder="0.00" className="h-10 rounded-lg border border-border bg-background px-2 text-right text-sm font-bold" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between border-t border-border bg-muted/40 px-4 py-3">
+                        <span className="text-xs font-semibold text-muted-foreground">Total</span>
+                        <span className="text-sm font-extrabold">{money(itemTotal)}</span>
                       </div>
                     </div>
                   </>
                 )}
 
+                {entryMode === 'income' && (
+                  <div className="overflow-hidden rounded-2xl border border-border bg-card">
+                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4">
+                      <span className="text-sm font-semibold">Deposit to</span>
+                      <select name="account" defaultValue={accountOptions[0]} className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select>
+                    </div>
+                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4">
+                      <span className="text-sm font-semibold">Source</span>
+                      <input name="payee" placeholder="Salary, client, dividend" className="max-w-[60%] rounded-lg border border-border bg-background px-2 py-2 text-right text-sm" />
+                    </div>
+                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4">
+                      <span className="text-sm font-semibold">Category</span>
+                      <select name="incomeCategory" className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none">{categories.map((category) => <option key={category}>{category}</option>)}</select>
+                    </div>
+                    <div className="flex min-h-18 items-center justify-between px-4">
+                      <span className="text-sm font-semibold">Amount</span>
+                      <input name="amount" type="number" min="0" step="0.01" required placeholder="0.00" className="w-full max-w-[60%] bg-transparent text-right text-3xl font-extrabold outline-none" />
+                    </div>
+                  </div>
+                )}
+
                 {entryMode === 'transfer' && (
                   <>
-                    <div className="overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
-                      <label className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
-                        <div><p className="text-[10px] text-white/55">From</p><p className="mt-1 text-sm font-semibold">Source account</p></div>
-                        <select name="account" defaultValue={accountRows[0]?.name} className="max-w-[55%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name} className="text-black">{account.name}</option>)}</select>
-                      </label>
-                      <label className="flex min-h-16 items-center justify-between gap-3 px-4">
-                        <div><p className="text-[10px] text-white/55">To</p><p className="mt-1 text-sm font-semibold">Destination account</p></div>
-                        <select name="transferTo" defaultValue={accountRows[1]?.name ?? accountRows[0]?.name} className="max-w-[55%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name} className="text-black">{account.name}</option>)}</select>
-                      </label>
+                    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+                      <div className="flex min-h-14 items-center justify-between border-b border-border px-4">
+                        <span className="text-sm font-semibold">From</span>
+                        <select name="account" defaultValue={accountOptions[0]} className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select>
+                      </div>
+                      <div className="flex min-h-14 items-center justify-between px-4">
+                        <span className="text-sm font-semibold">To</span>
+                        <select name="transferTo" defaultValue={accountOptions[1] ?? accountOptions[0]} className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select>
+                      </div>
                     </div>
-                    <div className="mt-3 overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
-                      <label className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
-                        <span className="text-sm font-semibold">Send amount</span>
-                        <input name="amount" type="number" min="0" step="0.01" required placeholder="0.00" className="max-w-[62%] bg-transparent text-right text-3xl font-extrabold outline-none placeholder:text-white/25" />
-                      </label>
-                      <label className="flex min-h-14 items-center justify-between gap-3 border-b border-white/10 px-4">
-                        <span className="text-sm text-white/75">Fee</span>
-                        <input name="fee" type="number" min="0" step="0.01" defaultValue="0" className="max-w-[50%] bg-transparent text-right text-lg font-bold outline-none" />
-                      </label>
-                      <label className="flex min-h-14 items-center justify-between gap-3 border-b border-white/10 px-4">
-                        <span className="text-sm text-white/75">Exchange rate</span>
-                        <input name="exchangeRate" type="number" min="0.000001" step="0.000001" defaultValue="1" className="max-w-[50%] bg-transparent text-right text-sm font-bold outline-none" />
-                      </label>
-                      <label className="flex min-h-14 items-center justify-between gap-3 px-4">
-                        <span className="text-sm text-white/75">Received amount</span>
-                        <input name="receivedAmount" type="number" min="0" step="0.01" placeholder="Same as send" className="max-w-[50%] bg-transparent text-right text-sm font-bold outline-none placeholder:text-white/25" />
-                      </label>
+                    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+                      <label className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Amount</span><input name="amount" type="number" min="0" step="0.01" required placeholder="0.00" className="max-w-[55%] bg-transparent text-right text-2xl font-extrabold outline-none" /></label>
+                      <label className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Fee</span><input name="fee" type="number" min="0" step="0.01" defaultValue="0" className="max-w-[45%] bg-transparent text-right text-sm font-bold outline-none" /></label>
+                      <label className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Exchange rate</span><input name="exchangeRate" type="number" min="0.000001" step="0.000001" defaultValue="1" className="max-w-[45%] bg-transparent text-right text-sm font-bold outline-none" /></label>
+                      <label className="flex min-h-14 items-center justify-between px-4"><span className="text-sm font-semibold">Received</span><input name="receivedAmount" type="number" min="0" step="0.01" placeholder="Same as amount" className="max-w-[45%] bg-transparent text-right text-sm font-bold outline-none" /></label>
                     </div>
                   </>
                 )}
 
                 {entryMode === 'planned' && (
-                  <div className="overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
-                    <label className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
-                      <div><p className="text-[10px] text-white/55">Type</p><p className="mt-1 text-sm font-semibold">Planned expense</p></div>
-                      <select name="plannedType" className="max-w-[55%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none"><option value="expense" className="text-black">Planned expense</option><option value="income" className="text-black">Planned income</option></select>
-                    </label>
-                    <label className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
-                      <div><p className="text-[10px] text-white/55">Account</p><p className="mt-1 text-sm font-semibold">Choose account</p></div>
-                      <select name="account" className="max-w-[55%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name} className="text-black">{account.name}</option>)}</select>
-                    </label>
-                    <label className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
-                      <div><p className="text-[10px] text-white/55">Category</p><p className="mt-1 text-sm font-semibold">Choose category</p></div>
-                      <select name="plannedCategory" className="max-w-[55%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none">{categories.map((category) => <option key={category} className="text-black">{category}</option>)}</select>
-                    </label>
-                    <label className="flex min-h-16 items-center justify-between gap-3 px-4">
-                      <div><p className="text-[10px] text-white/55">Amount</p><p className="mt-1 text-xs font-semibold text-white/55">EGP</p></div>
-                      <input name="amount" type="number" min="0" step="0.01" required placeholder="0" className="max-w-[62%] bg-transparent text-right text-3xl font-extrabold outline-none placeholder:text-white/25" />
-                    </label>
+                  <div className="overflow-hidden rounded-2xl border border-border bg-card">
+                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Type</span><select name="plannedType" className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none"><option value="expense">Planned expense</option><option value="income">Planned income</option></select></div>
+                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Account</span><select name="account" className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select></div>
+                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Category</span><select name="plannedCategory" className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none">{categories.map((category) => <option key={category}>{category}</option>)}</select></div>
+                    <div className="flex min-h-16 items-center justify-between px-4"><span className="text-sm font-semibold">Amount</span><input name="amount" type="number" min="0" step="0.01" required placeholder="0.00" className="max-w-[60%] bg-transparent text-right text-2xl font-extrabold outline-none" /></div>
                   </div>
                 )}
 
-                {entryMode === 'expense' && lineItems.length > 1 && (
-                  <div className="mt-3 overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
-                    <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-                      <div><p className="text-sm font-bold">Items</p><p className="text-[10px] text-white/50">Multiple purchases in one transaction</p></div>
-                      <button type="button" onClick={addLineItem} className="grid size-9 place-items-center rounded-full bg-white/10 hover:bg-white/15"><Plus className="size-4" /></button>
-                    </div>
-                    <div className="divide-y divide-white/10">
-                      {lineItems.map((item, index) => (
-                        <div key={item.id} className="space-y-2 p-3">
-                          <div className="flex gap-2">
-                            <input value={item.name} onChange={(event) => updateLineItem(item.id, { name: event.target.value })} placeholder={'Item ' + (index + 1)} className="min-w-0 flex-1 rounded-lg bg-black/10 px-3 py-2 text-sm outline-none placeholder:text-white/30" />
-                            <input value={item.amount || ''} onChange={(event) => updateLineItem(item.id, { amount: Number(event.target.value) || 0 })} type="number" min="0" step="0.01" placeholder="Amount" className="w-28 rounded-lg bg-black/10 px-2 py-2 text-right text-sm font-bold outline-none placeholder:text-white/30" />
-                          </div>
-                          <select value={item.category} onChange={(event) => updateLineItem(item.id, { category: event.target.value })} className="w-full rounded-lg bg-black/10 px-3 py-2 text-sm outline-none">{categories.map((category) => <option key={category} className="text-black">{category}</option>)}</select>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {entryMode === 'expense' && (
-                  <div className="mt-3">
-                    {lineItems.length === 1 ? (
-                      <button type="button" onClick={addLineItem} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/20 px-4 py-3 text-xs font-bold text-white/70 hover:bg-white/[0.03]">
-                        <Plus className="size-4" /> Add another item
-                      </button>
-                    ) : null}
-                  </div>
-                )}
-
-                <div className="mt-3 overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
-                  <label className="flex min-h-16 cursor-pointer items-center gap-3 px-4">
-                    <div className="grid size-10 place-items-center rounded-xl bg-white/10"><FileText className="size-4" /></div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold">Receipt / attachment</p>
-                      <p className="text-[10px] text-white/50">Photo, PDF or file</p>
-                    </div>
-                    <span className="rounded-lg border border-white/15 px-3 py-2 text-[10px] font-bold">Add</span>
+                <div className="overflow-hidden rounded-2xl border border-border bg-card">
+                  <label className="flex cursor-pointer items-center gap-3 px-4 py-4">
+                    <div className="grid size-10 place-items-center rounded-xl bg-muted"><FileText className="size-4" /></div>
+                    <div className="min-w-0 flex-1"><p className="text-sm font-bold">Attach receipt</p><p className="text-[10px] text-muted-foreground">Photo, PDF or file</p></div>
+                    <span className="rounded-lg border border-border px-2.5 py-2 text-[10px] font-bold">Add</span>
                     <input type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={handleAttachments} className="hidden" />
                   </label>
-                  {!!attachments.length && (
-                    <div className="border-t border-white/10 px-4 py-2">
-                      {attachments.map((file) => (
-                        <div key={file.name} className="flex items-center justify-between gap-2 py-1 text-[10px]">
-                          <span className="min-w-0 truncate font-semibold text-white/80">{file.name}</span>
-                          <button type="button" onClick={() => setAttachments((items) => items.filter((item) => item.name !== file.name))} className="shrink-0 text-white/55 hover:text-white">Remove</button>
-                        </div>
-                      ))}
+                  {!!attachments.length && <div className="border-t border-border px-4 py-2">{attachments.map((file) => <div key={file.name} className="flex items-center justify-between py-1 text-[10px]"><span className="truncate font-semibold">{file.name}</span><button type="button" onClick={() => setAttachments((items) => items.filter((item) => item.name !== file.name))} className="ml-2 text-muted-foreground">Remove</button></div>)}</div>}
+                </div>
+
+                <div className="overflow-hidden rounded-2xl border border-border bg-card">
+                  <button type="button" onClick={() => setShowMoreDetails((value) => !value)} className="flex w-full items-center justify-between px-4 py-4 text-left">
+                    <div><p className="text-sm font-bold">More details</p><p className="mt-1 text-[10px] text-muted-foreground">Optional information</p></div>
+                    <ChevronRight className={'size-4 transition-transform ' + (showMoreDetails ? 'rotate-90' : '')} />
+                  </button>
+                  {showMoreDetails && (
+                    <div className="grid gap-3 border-t border-border p-4 sm:grid-cols-2">
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Date</span><input name="date" required type="date" defaultValue="2026-09-20" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" /></label>
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Status</span><select name="status" disabled={entryMode === 'planned'} defaultValue="cleared" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"><option value="cleared">Paid</option><option value="not-cleared">Not cleared</option></select></label>
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Payee</span><input name="payee2" placeholder="Payee" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" /></label>
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Payment method</span><input name="method" placeholder="Cash, card, bank transfer" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" /></label>
+                      <label className="block sm:col-span-2"><span className="mb-1.5 block text-[10px] font-bold">Notes</span><textarea name="description" rows={2} placeholder="Add a note..." className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" /></label>
+                      <label className="flex items-center gap-2 text-xs font-semibold sm:col-span-2"><input name="recurring" type="checkbox" /> Repeat this transaction</label>
                     </div>
                   )}
                 </div>
 
-                <div className="mt-3 grid grid-cols-5 overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
-                  {[
-                    ['Details', ''],
-                    ['Attachment', ''],
-                    ['Check #', ''],
-                    ['Person', ''],
-                    ['Class', ''],
-                  ].map(([label]) => (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => setShowDetails((value) => !value)}
-                      className="flex min-h-14 items-center justify-center border-r border-white/10 px-1 text-center text-[9px] font-semibold text-white/70 last:border-r-0 hover:bg-white/[0.04]"
-                    >
-                      {label}
-                    </button>
-                  ))}
+                <div className="pt-1">
+                  <button type="submit" className="h-11 w-full rounded-xl bg-primary text-sm font-bold text-primary-foreground">Save Transaction</button>
                 </div>
-
-                {showDetails && (
-                  <div className="mt-3 overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
-                    <div className="space-y-3 p-4">
-                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold text-white/55">Date</span><input name="date" required type="date" defaultValue="2026-09-20" className="h-10 w-full rounded-xl bg-black/10 px-3 text-sm outline-none" /></label>
-                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold text-white/55">Status</span><select name="status" disabled={entryMode === 'planned'} defaultValue="cleared" className="h-10 w-full rounded-xl bg-black/10 px-3 text-sm outline-none"><option value="cleared" className="text-black">Cleared</option><option value="not-cleared" className="text-black">Not cleared</option></select></label>
-                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold text-white/55">Payment method</span><input name="method" placeholder="Cash, card, bank transfer..." className="h-10 w-full rounded-xl bg-black/10 px-3 text-sm outline-none placeholder:text-white/30" /></label>
-                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold text-white/55">Class</span><select name="className" defaultValue="Personal" className="h-10 w-full rounded-xl bg-black/10 px-3 text-sm outline-none"><option className="text-black">Personal</option><option className="text-black">Business</option><option className="text-black">Travel</option></select></label>
-                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold text-white/55">Check #</span><input name="checkNumber" className="h-10 w-full rounded-xl bg-black/10 px-3 text-sm outline-none" /></label>
-                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold text-white/55">Notes</span><textarea name="description" rows={3} className="w-full rounded-xl bg-black/10 px-3 py-2 text-sm outline-none placeholder:text-white/30" placeholder="Add a note..." /></label>
-                      <label className="flex items-center gap-3 rounded-xl bg-black/10 px-3 py-3 text-sm font-semibold"><input name="recurring" type="checkbox" /> Repeat transaction</label>
-                    </div>
-                  </div>
-                )}
-
-                {entryMode === 'expense' && lineItems.length === 1 && (
-                  <div className="mt-3 flex items-center justify-between rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
-                    <span className="text-[10px] text-white/50">Tip</span>
-                    <span className="text-[10px] font-semibold text-white/65">Add another item to split one receipt into several purchases.</span>
-                  </div>
-                )}
               </div>
             </form>
+
+            {showCategoryManager && (
+              <div className="fixed inset-0 z-[100] flex items-end justify-center bg-foreground/30 p-3 sm:items-center">
+                <div className="w-full max-w-md rounded-2xl border border-border bg-card p-4 shadow-2xl">
+                  <div className="flex items-center justify-between">
+                    <div><p className="font-bold">My categories</p><p className="text-[10px] text-muted-foreground">Create and manage your categories.</p></div>
+                    <button type="button" onClick={() => setShowCategoryManager(false)} className="grid size-8 place-items-center rounded-lg hover:bg-muted"><X className="size-4" /></button>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addCategory(); } }} placeholder="New category" className="h-10 flex-1 rounded-lg border border-border bg-background px-3 text-sm" />
+                    <button type="button" onClick={addCategory} className="h-10 rounded-lg bg-primary px-3 text-xs font-bold text-primary-foreground">Add</button>
+                  </div>
+                  <div className="mt-3 flex max-h-52 flex-wrap gap-2 overflow-y-auto">
+                    {categories.map((category) => (
+                      <button key={category} type="button" onClick={() => setCategories((items) => items.filter((item) => item !== category))} className="rounded-full border border-border px-3 py-1.5 text-[10px] font-semibold hover:border-destructive hover:text-destructive">
+                        {category} ×
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
