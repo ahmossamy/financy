@@ -1492,6 +1492,32 @@ export default function MoneyProPreview() {
           </div>
         </main>
       </div>
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 flex border-t border-border bg-background/95 px-2 pt-2 pb-[max(8px,env(safe-area-inset-bottom))] backdrop-blur-md lg:hidden" aria-label="Main navigation">
+        {[
+          { id: 'accounts' as Screen, label: 'Accounts', icon: WalletCards },
+          { id: 'transactions' as Screen, label: 'Transactions', icon: FileText },
+          { id: 'investments' as Screen, label: 'Investments', icon: LineChart },
+          { id: 'reports' as Screen, label: 'Reports', icon: BarChart3 },
+        ].map((item) => {
+          const Icon = item.icon;
+          const active = screen === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                setScreen(item.id);
+                setMobileOpen(false);
+              }}
+              className={'flex min-w-0 flex-1 flex-col items-center gap-1 py-1 text-[10px] font-semibold ' + (active ? 'text-primary' : 'text-muted-foreground')}
+            >
+              <Icon className="size-[19px]" strokeWidth={active ? 2.25 : 1.8} />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }
