@@ -1,7 +1,10 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   ArrowDownLeft,
+  ArrowLeftRight,
   ArrowUpRight,
+  CalendarDays,
+  ChevronRight,
   Eye,
   EyeOff,
   Landmark,
@@ -30,10 +33,17 @@ type Account = {
   notes: string | null;
 };
 
+type Category = {
+  id: string;
+  name: string;
+  status: string;
+};
+
 type TransactionRow = {
   id: string;
   account_id: string | null;
-  type: 'income' | 'expense';
+  category_id: string | null;
+  type: 'income' | 'expense' | 'transfer';
   amount: number;
   currency_code: string;
   transaction_date: string;
@@ -125,6 +135,7 @@ function formatDate(value: string) {
 export default function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -135,6 +146,12 @@ export default function Accounts() {
 
   const [showClosed, setShowClosed] = useState(false);
   const [search, setSearch] = useState('');
+  const [transactionSearch, setTransactionSearch] = useState('');
+  const [transactionTypeFilter, setTransactionTypeFilter] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
+  const [transactionPeriod, setTransactionPeriod] = useState('this_month');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [selectedTransaction, setSelectedTransaction] = useState<TransactionRow | null>(null);
 
   const [selectedAccount, setSelectedAccount] =
     useState<Account | null>(null);
@@ -154,7 +171,7 @@ export default function Accounts() {
       return;
     }
 
-    const [accountsResult, transactionsResult] =
+    const [accountsResult, transactionsResult, categoriesResult] =
       await Promise.all([
         supabase
           .from('accounts')
@@ -167,11 +184,18 @@ export default function Accounts() {
         supabase
           .from('transactions')
           .select(
-            'id, account_id, type, amount, currency_code, transaction_date, description, notes, status',
+            'id, account_id, category_id, type, amount, currency_code, transaction_date, description, notes, status',
           )
           .eq('user_id', user.id)
-          .in('type', ['income', 'expense'])
+          .in('type', ['income', 'expense', 'transfer'])
           .order('transaction_date', { ascending: false }),
+        supabase
+          .from('categories')
+          .select('id, name, status')
+          .eq('user_id', user.id)
+          .eq('status', 'active')
+          .order('sort_order')
+          .order('name'),
       ]);
 
     if (accountsResult.error) {
@@ -186,10 +210,17 @@ export default function Accounts() {
       return;
     }
 
+    if (categoriesResult.error) {
+      setError(categoriesResult.error.message);
+      setLoading(false);
+      return;
+    }
+
     setAccounts((accountsResult.data ?? []) as Account[]);
     setTransactions(
       (transactionsResult.data ?? []) as TransactionRow[],
     );
+    setCategories((categoriesResult.data ?? []) as Category[]);
     setLoading(false);
   }
 
@@ -330,39 +361,107 @@ export default function Accounts() {
   const selectedTransactions = useMemo(() => {
     if (!selectedAccount) return [];
 
+    const today = new Date();
+    const start = new Date(today);
+    const end = new Date(today);
+    const period = transactionPeriod;
+
+    if (period === 'today') {
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    } else if (period === 'this_week') {
+      const day = start.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      start.setDate(start.getDate() - diff);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    } else if (period === 'this_month') {
+      start.setDate(1);
+      start.setHours(0, 0, 0, 0);
+      end.setMonth(end.getMonth() + 1, 0);
+      end.setHours(23, 59, 59, 999);
+    } else if (period === 'last_30_days') {
+      start.setDate(start.getDate() - 29);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    }
+
+    const normalizedSearch = transactionSearch.trim().toLowerCase();
+
     return transactions
-      .filter(
-        (transaction) =>
-          transaction.account_id === selectedAccount.id,
+      .filter((transaction) => transaction.account_id === selectedAccount.id)
+      .filter((transaction) =>
+        transactionTypeFilter === 'all' || transaction.type === transactionTypeFilter,
       )
-      .sort((a, b) =>
-        b.transaction_date.localeCompare(a.transaction_date),
-      );
-  }, [selectedAccount, transactions]);
+      .filter((transaction) => {
+        if (period === 'all') return true;
+        if (period === 'custom') {
+          const date = transaction.transaction_date;
+          return (!customFrom || date >= customFrom) && (!customTo || date <= customTo);
+        }
+        const date = new Date(`${transaction.transaction_date}T12:00:00`);
+        return date >= start && date <= end;
+      })
+      .filter((transaction) => {
+        if (!normalizedSearch) return true;
+        const category = categories.find((item) => item.id === transaction.category_id);
+        return [category?.name, transaction.description, transaction.currency_code]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(normalizedSearch));
+      })
+      .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
+  }, [
+    selectedAccount,
+    transactions,
+    categories,
+    transactionTypeFilter,
+    transactionPeriod,
+    customFrom,
+    customTo,
+    transactionSearch,
+  ]);
+
+  const selectedTransactionBalances = useMemo(() => {
+    if (!selectedAccount) return new Map<string, number>();
+
+    const allForAccount = transactions
+      .filter((transaction) => transaction.account_id === selectedAccount.id)
+      .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
+
+    let running = Number(balances[selectedAccount.id] ?? 0);
+    const result = new Map<string, number>();
+
+    for (const transaction of allForAccount) {
+      result.set(transaction.id, running);
+      if (transaction.status !== 'completed') continue;
+      const amount = Number(transaction.amount || 0);
+      if (transaction.type === 'income') running -= amount;
+      else if (transaction.type === 'expense') running += amount;
+    }
+
+    return result;
+  }, [selectedAccount, transactions, balances]);
 
   const selectedSummary = useMemo(() => {
     if (!selectedAccount) {
-      return {
-        income: 0,
-        expenses: 0,
-      };
+      return { income: 0, expenses: 0 };
     }
 
-    return selectedTransactions.reduce(
-      (summary, transaction) => {
-        if (transaction.status !== 'completed') return summary;
-
-        if (transaction.type === 'income') {
-          summary.income += Number(transaction.amount || 0);
-        } else {
-          summary.expenses += Number(transaction.amount || 0);
-        }
-
-        return summary;
-      },
-      { income: 0, expenses: 0 },
-    );
-  }, [selectedAccount, selectedTransactions]);
+    return transactions
+      .filter((transaction) => transaction.account_id === selectedAccount.id)
+      .reduce(
+        (summary, transaction) => {
+          if (transaction.status !== 'completed') return summary;
+          if (transaction.type === 'income') {
+            summary.income += Number(transaction.amount || 0);
+          } else if (transaction.type === 'expense') {
+            summary.expenses += Number(transaction.amount || 0);
+          }
+          return summary;
+        },
+        { income: 0, expenses: 0 },
+      );
+  }, [selectedAccount, transactions]);
 
   function openAdd(type = 'bank') {
 
@@ -686,7 +785,7 @@ export default function Accounts() {
             <p className="text-xs font-semibold text-muted-foreground">Payment Accounts</p>
             <p className="mt-2 font-display text-xl font-bold">
               {Object.entries(paymentTotalsByCurrency).length === 1
-                ? money(Object.values(paymentTotalsByCurrency)[0], Object.keys(paymentTotalsByCurrency)[0])
+                ? money(Object.values(paymentTotalsByCurrency)[0] as number, Object.keys(paymentTotalsByCurrency)[0])
                 : `${paymentActiveAccounts.length} accounts`}
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">Bank, cash, wallets & prepaid</p>
@@ -696,7 +795,7 @@ export default function Accounts() {
             <p className="text-xs font-semibold text-muted-foreground">Credit Cards</p>
             <p className="mt-2 font-display text-xl font-bold">
               {Object.entries(creditTotalsByCurrency).length === 1
-                ? money(Object.values(creditTotalsByCurrency)[0], Object.keys(creditTotalsByCurrency)[0])
+                ? money(Object.values(creditTotalsByCurrency)[0] as number, Object.keys(creditTotalsByCurrency)[0])
                 : `${activeCreditCards.length} cards`}
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">Total outstanding</p>
@@ -1025,8 +1124,7 @@ export default function Accounts() {
 
                   <button
                     onClick={() => {
-                      window.location.href =
-                        `/expenses?account=${selectedAccount.id}`;
+                      window.location.href = '/transactions';
                     }}
                     className="inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-3 text-xs font-bold text-primary-foreground"
                   >
@@ -1036,60 +1134,184 @@ export default function Accounts() {
                 </div>
               </div>
 
+              <div className="grid gap-3 sm:grid-cols-[1.4fr_1fr_1fr]">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={transactionSearch}
+                    onChange={(event) => setTransactionSearch(event.target.value)}
+                    placeholder="Search transactions..."
+                    className="h-10 w-full rounded-xl border border-border bg-background pl-10 pr-3 text-xs outline-none focus:border-primary"
+                  />
+                </div>
+                <select
+                  value={transactionTypeFilter}
+                  onChange={(event) => setTransactionTypeFilter(event.target.value as typeof transactionTypeFilter)}
+                  className="h-10 rounded-xl border border-border bg-background px-3 text-xs font-semibold outline-none focus:border-primary"
+                >
+                  <option value="all">All types</option>
+                  <option value="income">Income</option>
+                  <option value="expense">Expenses</option>
+                  <option value="transfer">Transfers</option>
+                </select>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <CalendarDays className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <select
+                      value={transactionPeriod}
+                      onChange={(event) => setTransactionPeriod(event.target.value)}
+                      className="h-10 w-full appearance-none rounded-xl border border-border bg-background pl-9 pr-3 text-xs font-semibold outline-none focus:border-primary"
+                    >
+                      <option value="all">All time</option>
+                      <option value="today">Today</option>
+                      <option value="this_week">This week</option>
+                      <option value="this_month">This month</option>
+                      <option value="last_30_days">Last 30 days</option>
+                      <option value="custom">Custom range</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {transactionPeriod === 'custom' && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={(event) => setCustomFrom(event.target.value)}
+                    className="h-10 rounded-xl border border-border bg-background px-3 text-xs outline-none focus:border-primary"
+                  />
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={(event) => setCustomTo(event.target.value)}
+                    className="h-10 rounded-xl border border-border bg-background px-3 text-xs outline-none focus:border-primary"
+                  />
+                </div>
+              )}
+
               <div className="overflow-hidden rounded-2xl border border-border">
                 {selectedTransactions.length === 0 ? (
                   <div className="px-5 py-12 text-center text-sm text-muted-foreground">
-                    No transactions for this account yet.
+                    No transactions match the selected filters.
                   </div>
                 ) : (
                   <div className="divide-y divide-border">
-                    {selectedTransactions.map(
-                      (transaction) => (
-                        <div
-                          key={transaction.id}
-                          className="grid gap-3 px-4 py-4 sm:grid-cols-[1fr_auto_auto] sm:items-center"
-                        >
-                          <div>
-                            <p className="text-sm font-semibold">
-                              {transaction.description ||
-                                'Untitled transaction'}
-                            </p>
+                    {selectedTransactions.map((transaction) => {
+                      const category = categories.find((item) => item.id === transaction.category_id);
+                      const isIncome = transaction.type === 'income';
+                      const isTransfer = transaction.type === 'transfer';
+                      const balanceAfter = selectedTransactionBalances.get(transaction.id);
 
-                            <p className="mt-1 text-[11px] text-muted-foreground">
-                              {formatDate(
-                                transaction.transaction_date,
-                              )}
-                              {' · '}
-                              {transaction.status}
+                      return (
+                        <button
+                          key={transaction.id}
+                          type="button"
+                          onClick={() => setSelectedTransaction(transaction)}
+                          className="flex w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-muted/40"
+                        >
+                          <div
+                            className={`grid size-11 shrink-0 place-items-center rounded-full ${
+                              isTransfer
+                                ? 'bg-blue-50 text-blue-700'
+                                : isIncome
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : 'bg-rose-50 text-rose-700'
+                            }`}
+                          >
+                            {isTransfer ? (
+                              <ArrowLeftRight className="size-5" />
+                            ) : isIncome ? (
+                              <ArrowDownLeft className="size-5" />
+                            ) : (
+                              <ArrowUpRight className="size-5" />
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-bold">
+                              {category?.name || (isTransfer ? 'Transfer' : isIncome ? 'Income' : 'Expense')}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {formatDate(transaction.transaction_date)} · {transaction.status}
                             </p>
                           </div>
 
-                          <span
-                            className={`inline-flex items-center gap-1 text-xs font-bold ${
-                              transaction.type === 'income'
-                                ? 'text-primary'
-                                : 'text-destructive'
-                            }`}
-                          >
-                            {transaction.type === 'income' ? (
-                              <ArrowDownLeft className="size-3.5" />
-                            ) : (
-                              <ArrowUpRight className="size-3.5" />
-                            )}
-                            {transaction.type === 'income'
-                              ? '+'
-                              : '-'}
-                            {money(
-                              Number(transaction.amount),
-                              transaction.currency_code,
-                            )}
-                          </span>
-                        </div>
-                      ),
-                    )}
+                          <div className="text-right">
+                            <p className={`font-display text-sm font-bold ${isTransfer ? 'text-foreground' : isIncome ? 'text-primary' : 'text-destructive'}`}>
+                              {isIncome ? '+' : isTransfer ? '' : '-'} {money(Number(transaction.amount), transaction.currency_code)}
+                            </p>
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              Balance: {money(Number(balanceAfter ?? 0), selectedAccount.currency_code)}
+                            </p>
+                          </div>
+
+                          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
+
+              <p className="text-[11px] text-muted-foreground">
+                {selectedTransactions.length} transaction(s) shown. Click any transaction to view its details.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedTransaction && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center">
+          <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-border bg-card shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div>
+                <p className="text-xs font-semibold text-primary">Transaction details</p>
+                <h3 className="mt-1 font-display text-lg font-bold">
+                  {categories.find((item) => item.id === selectedTransaction.category_id)?.name || (selectedTransaction.type === 'transfer' ? 'Transfer' : selectedTransaction.type === 'income' ? 'Income' : 'Expense')}
+                </h3>
+              </div>
+              <button onClick={() => setSelectedTransaction(null)} className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted" aria-label="Close">
+                <X className="size-5" />
+              </button>
+            </div>
+            <div className="space-y-4 p-5">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-border p-4">
+                  <p className="text-[11px] font-semibold text-muted-foreground">Amount</p>
+                  <p className={`mt-2 font-display text-xl font-bold ${selectedTransaction.type === 'income' ? 'text-primary' : selectedTransaction.type === 'expense' ? 'text-destructive' : 'text-foreground'}`}>
+                    {selectedTransaction.type === 'income' ? '+' : selectedTransaction.type === 'expense' ? '-' : ''} {money(Number(selectedTransaction.amount), selectedTransaction.currency_code)}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-border p-4">
+                  <p className="text-[11px] font-semibold text-muted-foreground">Date</p>
+                  <p className="mt-2 text-sm font-bold">{formatDate(selectedTransaction.transaction_date)}</p>
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-border p-4">
+                  <p className="text-[11px] font-semibold text-muted-foreground">Type</p>
+                  <p className="mt-2 text-sm font-bold capitalize">{selectedTransaction.type}</p>
+                </div>
+                <div className="rounded-2xl border border-border p-4">
+                  <p className="text-[11px] font-semibold text-muted-foreground">Status</p>
+                  <p className="mt-2 text-sm font-bold capitalize">{selectedTransaction.status}</p>
+                </div>
+              </div>
+              {selectedTransaction.notes && (
+                <div className="rounded-2xl border border-border p-4">
+                  <p className="text-[11px] font-semibold text-muted-foreground">Notes</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm">{selectedTransaction.notes}</p>
+                </div>
+              )}
+              <button
+                onClick={() => { setSelectedTransaction(null); openEdit(selectedTransaction); }}
+                className="inline-flex h-10 items-center gap-2 rounded-xl border border-border px-4 text-xs font-bold"
+              >
+                <Pencil className="size-3.5" />
+                Edit transaction
+              </button>
             </div>
           </div>
         </div>
