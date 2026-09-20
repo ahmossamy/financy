@@ -1417,7 +1417,8 @@ function Settings() {
   const [categoryName, setCategoryName] = useState('');
   const [parentCategoryId, setParentCategoryId] = useState('');
   const [expenseItemName, setExpenseItemName] = useState('');
-  const [expenseItemCategoryId, setExpenseItemCategoryId] = useState('');
+  const [expenseItemMainCategoryId, setExpenseItemMainCategoryId] = useState('');
+  const [expenseItemSubcategoryId, setExpenseItemSubcategoryId] = useState('');
   const [listInputs, setListInputs] = useState({
     people: '',
     classes: '',
@@ -1489,10 +1490,11 @@ function Settings() {
     if (transactionSettings.expenseItems.some((item) => item.name.toLowerCase() === name.toLowerCase())) return;
 
     const fallbackCategoryId = transactionSettings.expenseCategories.find((item) => !item.parentId)?.id ?? '';
+    const selectedCategoryId = expenseItemSubcategoryId || expenseItemMainCategoryId || fallbackCategoryId;
     const item: ExpenseItem = {
       id: 'item-' + Date.now(),
       name,
-      categoryId: expenseItemCategoryId || fallbackCategoryId,
+      categoryId: selectedCategoryId,
     };
 
     updateSettings({
@@ -1500,7 +1502,8 @@ function Settings() {
       expenseItems: [...transactionSettings.expenseItems, item],
     });
     setExpenseItemName('');
-    setExpenseItemCategoryId('');
+    setExpenseItemMainCategoryId('');
+    setExpenseItemSubcategoryId('');
   }
 
   function removeExpenseItem(id: string) {
@@ -1639,10 +1642,12 @@ function Settings() {
             <div className="space-y-4">
               <div className="rounded-2xl border border-border bg-muted/30 p-4">
                 <p className="text-sm font-bold">Expense Items</p>
-                <p className="mt-1 text-xs text-muted-foreground">Create items once, select them from Expense transactions, and keep the category attached to each item.</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Items are selected in the expense form. Their category is assigned here and is not entered again during the transaction.
+                </p>
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+              <div className="grid gap-2 lg:grid-cols-[1.2fr_1fr_1fr_auto]">
                 <input
                   value={expenseItemName}
                   onChange={(event) => setExpenseItemName(event.target.value)}
@@ -1650,34 +1655,61 @@ function Settings() {
                   className="h-10 rounded-xl border border-border bg-background px-3 text-sm"
                 />
                 <select
-                  value={expenseItemCategoryId}
-                  onChange={(event) => setExpenseItemCategoryId(event.target.value)}
+                  value={expenseItemMainCategoryId}
+                  onChange={(event) => {
+                    setExpenseItemMainCategoryId(event.target.value);
+                    setExpenseItemSubcategoryId('');
+                  }}
                   className="h-10 rounded-xl border border-border bg-background px-3 text-sm"
                 >
-                  <option value="">Choose category</option>
-                  {transactionSettings.expenseCategories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.parentId ? (transactionSettings.expenseCategories.find((parent) => parent.id === category.parentId)?.name || '') + ' > ' : ''}{category.name}
-                    </option>
-                  ))}
+                  <option value="">Main category</option>
+                  {transactionSettings.expenseCategories
+                    .filter((item) => !item.parentId)
+                    .map((category) => (
+                      <option key={category.id} value={category.id}>{category.name}</option>
+                    ))}
+                </select>
+                <select
+                  value={expenseItemSubcategoryId}
+                  onChange={(event) => setExpenseItemSubcategoryId(event.target.value)}
+                  disabled={!expenseItemMainCategoryId}
+                  className="h-10 rounded-xl border border-border bg-background px-3 text-sm"
+                >
+                  <option value="">Branch / subcategory</option>
+                  {transactionSettings.expenseCategories
+                    .filter((item) => item.parentId === expenseItemMainCategoryId)
+                    .map((category) => (
+                      <option key={category.id} value={category.id}>{category.name}</option>
+                    ))}
                 </select>
                 <button type="button" onClick={addExpenseItem} className="h-10 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground">Add</button>
               </div>
 
-              <div className="space-y-2">
-                {transactionSettings.expenseItems.map((item) => {
-                  const category = transactionSettings.expenseCategories.find((entry) => entry.id === item.categoryId);
-                  const parent = category?.parentId ? transactionSettings.expenseCategories.find((entry) => entry.id === category.parentId) : null;
-                  return (
-                    <div key={item.id} className="flex items-center justify-between rounded-xl border border-border px-4 py-3">
-                      <div>
-                        <p className="text-sm font-semibold">{item.name}</p>
-                        <p className="text-[10px] text-muted-foreground">{parent ? parent.name + ' > ' : ''}{category?.name ?? 'No category'}</p>
+              <div className="overflow-hidden rounded-2xl border border-border">
+                <div className="hidden grid-cols-[1.2fr_1fr_1fr_auto] border-b border-border bg-muted/40 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground sm:grid">
+                  <span>Item</span>
+                  <span>Main Category</span>
+                  <span>Branch</span>
+                  <span />
+                </div>
+                <div className="divide-y divide-border">
+                  {transactionSettings.expenseItems.map((item) => {
+                    const category = transactionSettings.expenseCategories.find((entry) => entry.id === item.categoryId);
+                    const parent = category?.parentId
+                      ? transactionSettings.expenseCategories.find((entry) => entry.id === category.parentId)
+                      : category;
+                    const branch = category?.parentId ? category : null;
+
+                    return (
+                      <div key={item.id} className="grid gap-2 px-4 py-3 sm:grid-cols-[1.2fr_1fr_1fr_auto] sm:items-center">
+                        <span className="text-sm font-semibold">{item.name}</span>
+                        <span className="text-xs">{parent?.name ?? '—'}</span>
+                        <span className="text-xs text-muted-foreground">{branch?.name ?? '—'}</span>
+                        <button type="button" onClick={() => removeExpenseItem(item.id)} className="text-left text-xs font-bold text-muted-foreground hover:text-destructive sm:text-right">Remove</button>
                       </div>
-                      <button type="button" onClick={() => removeExpenseItem(item.id)} className="text-xs font-bold text-muted-foreground hover:text-destructive">Remove</button>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
