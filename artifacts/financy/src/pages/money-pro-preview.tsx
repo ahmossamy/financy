@@ -121,7 +121,7 @@ type TransactionRecord = {
 
 function TransactionsPreview() {
   type EntryMode = 'expense' | 'income' | 'transfer' | 'planned';
-  type LineItem = { id: string; name: string; category: string; amount: number };
+  type LineItem = { id: string; itemId: string; name: string; category: string; amount: number };
   type Attachment = { name: string; type: string };
 
   const [rows, setRows] = useState<TransactionRecord[]>(() =>
@@ -148,8 +148,11 @@ function TransactionsPreview() {
   const [showMoreDetails, setShowMoreDetails] = useState(false);
   const [entryMode, setEntryMode] = useState<EntryMode>('expense');
   const [formAccount, setFormAccount] = useState(accountRows[0]?.name ?? 'Cash');
+  const [transferToAccount, setTransferToAccount] = useState(accountRows[1]?.name ?? accountRows[0]?.name ?? 'Cash');
+  const [transferAmount, setTransferAmount] = useState('');
+  const [transferRate, setTransferRate] = useState('1');
   const [lineItems, setLineItems] = useState<LineItem[]>([
-    { id: 'item-1', name: '', category: loadTransactionSettings().expenseCategories[0]?.name ?? 'Other', amount: 0 },
+    { id: 'item-1', itemId: '', name: '', category: loadTransactionSettings().expenseCategories[0]?.name ?? 'Other', amount: 0 },
   ]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
 
@@ -171,6 +174,12 @@ function TransactionsPreview() {
     ...rows.map((row) => row.category),
   ]));
   const itemTotal = lineItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const transferSource = accountRows.find((account) => account.name === formAccount);
+  const transferDestination = accountRows.find((account) => account.name === transferToAccount);
+  const sourceCurrency = transferSource?.currency ?? 'EGP';
+  const destinationCurrency = transferDestination?.currency ?? 'EGP';
+  const effectiveTransferRate = sourceCurrency === destinationCurrency ? 1 : Math.max(0, Number(transferRate) || 0);
+  const transferReceived = Math.max(0, Number(transferAmount) || 0) * effectiveTransferRate;
 
   useEffect(() => {
     const onSettingsChanged = () => setTransactionSettings(loadTransactionSettings());
@@ -222,7 +231,10 @@ function TransactionsPreview() {
     setTransactionSettings(settings);
     setEntryMode('expense');
     setFormAccount(accountRows[0]?.name ?? 'Cash');
-    setLineItems([{ id: 'item-' + Date.now(), name: '', category: settings.expenseCategories[0]?.name ?? 'Other', amount: 0 }]);
+    setTransferToAccount(accountRows[1]?.name ?? accountRows[0]?.name ?? 'Cash');
+    setTransferAmount('');
+    setTransferRate('1');
+    setLineItems([{ id: 'item-' + Date.now(), itemId: '', name: '', category: settings.expenseCategories[0]?.name ?? 'Other', amount: 0 }]);
     setAttachments([]);
     setShowFieldSettings(false);
     setShowMoreDetails(false);
@@ -242,12 +254,26 @@ function TransactionsPreview() {
   function addLineItem() {
     setLineItems((items) => [
       ...items,
-      { id: 'item-' + Date.now() + '-' + items.length, name: '', category: expenseCategories[0]?.name ?? 'Other', amount: 0 },
+      { id: 'item-' + Date.now() + '-' + items.length, itemId: '', name: '', category: expenseCategories[0]?.name ?? 'Other', amount: 0 },
     ]);
   }
 
   function updateLineItem(id: string, patch: Partial<LineItem>) {
     setLineItems((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
+  }
+
+  function selectExpenseItem(id: string, itemId: string) {
+    const selectedItem = transactionSettings.expenseItems.find((item) => item.id === itemId);
+    if (!selectedItem) {
+      updateLineItem(id, { itemId: '', name: '', category: expenseCategories[0]?.name ?? 'Other' });
+      return;
+    }
+    const selectedCategory = expenseCategories.find((category) => category.id === selectedItem.categoryId);
+    updateLineItem(id, {
+      itemId,
+      name: selectedItem.name,
+      category: selectedCategory?.name ?? expenseCategories[0]?.name ?? 'Other',
+    });
   }
 
   function removeLineItem(id: string) {
@@ -283,7 +309,7 @@ function TransactionsPreview() {
 
     const plannedType = String(form.get('plannedType') || 'expense') as 'expense' | 'income';
     const type = (entryMode === 'planned' ? plannedType : entryMode) as TransactionRecord['type'];
-    const transferTo = String(form.get('transferTo') || '');
+    const transferTo = entryMode === 'transfer' ? transferToAccount : String(form.get('transferTo') || '');
     const fee = Math.abs(Number(form.get('fee') || 0));
 
     const title = String(form.get('title') || (
@@ -315,13 +341,13 @@ function TransactionsPreview() {
       checkNumber: String(form.get('checkNumber') || ''),
       status: entryMode === 'planned' ? 'planned' : String(form.get('status') || 'cleared') as TransactionRecord['status'],
       recurring: form.get('recurring') === 'on',
-      items: lineItems.filter((item) => item.name.trim() || item.amount > 0),
+      items: lineItems.filter((item) => item.itemId || item.amount > 0),
       attachments,
       method: String(form.get('method') || ''),
       fee,
       transferTo,
       exchangeRate: Number(form.get('exchangeRate') || 1),
-      receivedAmount: Math.abs(Number(form.get('receivedAmount') || amount)),
+      receivedAmount: entryMode === 'transfer' ? transferReceived : Math.abs(Number(form.get('receivedAmount') || amount)),
       person: String(form.get('person') || ''),
       reference: String(form.get('reference') || ''),
       tag: String(form.get('tag') || ''),
@@ -449,12 +475,29 @@ function TransactionsPreview() {
                       {lineItems.map((item, index) => (
                         <div key={item.id} className="space-y-2 p-3">
                           <div className="grid grid-cols-[minmax(0,1fr)_100px_auto] gap-2">
-                            <input value={item.name} onChange={(event) => updateLineItem(item.id, { name: event.target.value })} placeholder={'Item ' + (index + 1)} className="h-10 min-w-0 rounded-lg border border-border bg-background px-3 text-sm" />
+                            <select
+                                required
+                                value={item.itemId}
+                                onChange={(event) => selectExpenseItem(item.id, event.target.value)}
+                                className="h-10 min-w-0 rounded-lg border border-border bg-background px-3 text-sm"
+                              >
+                                <option value="">Choose item {index + 1}</option>
+                                {transactionSettings.expenseItems.map((configuredItem) => {
+                                  const configuredCategory = expenseCategories.find((category) => category.id === configuredItem.categoryId);
+                                  return <option key={configuredItem.id} value={configuredItem.id}>{configuredCategory ? configuredCategory.name + ' > ' : ''}{configuredItem.name}</option>;
+                                })}
+                              </select>
                             <input value={item.amount || ''} onChange={(event) => updateLineItem(item.id, { amount: Number(event.target.value) || 0 })} type="number" min="0" step="0.01" placeholder="0.00" className="h-10 rounded-lg border border-border bg-background px-2 text-right text-sm font-bold" />
                             {lineItems.length > 1 ? <button type="button" onClick={() => removeLineItem(item.id)} className="grid size-10 place-items-center rounded-lg border border-border text-muted-foreground hover:text-destructive">×</button> : <span />}
                           </div>
-                          <div className="flex gap-2">
-                            <select required value={item.category} onChange={(event) => updateLineItem(item.id, { category: event.target.value })} className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm">{expenseCategoryOptions.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}</select>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex min-w-0 flex-1 items-center rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs font-semibold text-muted-foreground">
+                              {(() => {
+                                const configured = transactionSettings.expenseItems.find((entry) => entry.id === item.itemId);
+                                const configuredCategory = expenseCategories.find((category) => category.id === configured?.categoryId);
+                                return configuredCategory ? configuredCategory.name : item.category;
+                              })()}
+                            </span>
                             <button type="button" onClick={addCategory} className="h-10 rounded-lg border border-border px-3 text-[10px] font-bold">+ Category</button>
                           </div>
                         </div>
@@ -473,12 +516,41 @@ function TransactionsPreview() {
 
                 {entryMode === 'transfer' && (
                   <div className="overflow-hidden rounded-2xl border border-border bg-card">
-                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">From *</span><select name="account" value={formAccount} onChange={(event) => setFormAccount(event.target.value)} className="max-w-[62%] bg-transparent text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name} value={account.name}>{account.name}</option>)}</select></div>
-                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">To *</span><select name="transferTo" defaultValue={accountOptions[1] ?? accountOptions[0]} className="max-w-[62%] bg-transparent text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name} value={account.name}>{account.name}</option>)}</select></div>
-                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Amount *</span><input name="amount" required type="number" min="0" step="0.01" placeholder="0.00" className="max-w-[58%] bg-transparent text-right text-2xl font-extrabold outline-none" /></div>
-                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Fee</span><input name="fee" type="number" min="0" step="0.01" defaultValue="0" className="max-w-[45%] bg-transparent text-right text-sm font-bold outline-none" /></div>
-                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Exchange rate</span><input name="exchangeRate" type="number" min="0.000001" step="0.000001" defaultValue="1" className="max-w-[45%] bg-transparent text-right text-sm font-bold outline-none" /></div>
-                    <div className="flex min-h-14 items-center justify-between px-4"><span className="text-sm font-semibold">Received</span><input name="receivedAmount" type="number" min="0" step="0.01" placeholder="Same as amount" className="max-w-[45%] bg-transparent text-right text-sm font-bold outline-none" /></div>
+                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4">
+                      <span className="text-sm font-semibold">From *</span>
+                      <select name="account" value={formAccount} onChange={(event) => setFormAccount(event.target.value)} className="max-w-[62%] bg-transparent text-right text-sm font-bold outline-none">
+                        {accountRows.map((account) => <option key={account.name} value={account.name}>{account.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4">
+                      <span className="text-sm font-semibold">To *</span>
+                      <select name="transferTo" value={transferToAccount} onChange={(event) => setTransferToAccount(event.target.value)} className="max-w-[62%] bg-transparent text-right text-sm font-bold outline-none">
+                        {accountRows.map((account) => <option key={account.name} value={account.name}>{account.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4">
+                      <span className="text-sm font-semibold">Amount *</span>
+                      <div className="flex items-center gap-2">
+                        <input name="amount" value={transferAmount} onChange={(event) => setTransferAmount(event.target.value)} required type="number" min="0" step="0.01" placeholder="0.00" className="w-36 bg-transparent text-right text-2xl font-extrabold outline-none" />
+                        <span className="text-xs font-bold text-muted-foreground">{sourceCurrency}</span>
+                      </div>
+                    </div>
+                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4">
+                      <span className="text-sm font-semibold">Fee</span>
+                      <input name="fee" type="number" min="0" step="0.01" defaultValue="0" className="max-w-[45%] bg-transparent text-right text-sm font-bold outline-none" />
+                    </div>
+                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4">
+                      <span className="text-sm font-semibold">Exchange rate</span>
+                      <input name="exchangeRate" value={sourceCurrency === destinationCurrency ? '1' : transferRate} onChange={(event) => setTransferRate(event.target.value)} disabled={sourceCurrency === destinationCurrency} type="number" min="0.000001" step="0.000001" className="max-w-[45%] bg-transparent text-right text-sm font-bold outline-none" />
+                    </div>
+                    <div className="flex min-h-16 items-center justify-between px-4">
+                      <span className="text-sm font-semibold">Received</span>
+                      <div className="text-right">
+                        <p className="text-2xl font-extrabold">{money(transferReceived, destinationCurrency)}</p>
+                        <p className="text-[10px] text-muted-foreground">Automatically calculated from amount × exchange rate</p>
+                      </div>
+                      <input type="hidden" name="receivedAmount" value={transferReceived} />
+                    </div>
                   </div>
                 )}
 
