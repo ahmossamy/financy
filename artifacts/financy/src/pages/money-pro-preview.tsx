@@ -1262,6 +1262,7 @@ export default function MoneyProPreview() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<number | null>(20);
+  const [calendarView, setCalendarView] = useState<'all' | 'planned' | 'recurring' | 'bills' | 'installments'>('all');
 
   const monthLabel = useMemo(() => {
     const d = new Date();
@@ -1468,6 +1469,13 @@ export default function MoneyProPreview() {
                     return day > 0 && day <= daysInMonth ? day : null;
                   });
 
+                  const scheduledRows = [
+                    { id: 'planned-salary', day: 25, title: 'Salary', type: 'income' as const, category: 'Salary', account: 'CIB', amount: 32000, currency: 'EGP', status: 'Planned', kind: 'planned' as const, repeat: 'Monthly' },
+                    { id: 'bill-electricity', day: 27, title: 'Electricity Bill', type: 'expense' as const, category: 'Bills · Electricity', account: 'CIB', amount: -500, currency: 'EGP', status: 'Planned', kind: 'bills' as const, repeat: 'Monthly' },
+                    { id: 'installment-school', day: 15, title: 'School Installment', type: 'expense' as const, category: 'Installments', account: 'CIB', amount: -4200, currency: 'EGP', status: 'Planned', kind: 'installments' as const, repeat: 'Monthly' },
+                    { id: 'recurring-internet', day: 10, title: 'Internet', type: 'expense' as const, category: 'Bills · Internet', account: 'CIB', amount: -600, currency: 'EGP', status: 'Planned', kind: 'recurring' as const, repeat: 'Monthly' },
+                  ];
+
                   const dateTransactions = transactionRows.filter((row) => {
                     const match = row.date.match(/(\d{1,2})\s+([A-Za-z]{3})/);
                     if (!match) return false;
@@ -1475,16 +1483,24 @@ export default function MoneyProPreview() {
                     return rowDate.getFullYear() === year && rowDate.getMonth() === month;
                   });
 
-                  const transactionsForDay = (day: number) =>
-                    dateTransactions.filter((row) => {
+                  const visibleScheduledRows = calendarView === 'all'
+                    ? scheduledRows
+                    : scheduledRows.filter((row) => row.kind === calendarView);
+
+                  const transactionsForDay = (day: number) => [
+                    ...dateTransactions.filter((row) => {
                       const match = row.date.match(/(\d{1,2})\s+/);
                       return match && Number(match[1]) === day;
-                    });
+                    }).map((row) => ({ ...row, kind: 'transaction' as const })),
+                    ...visibleScheduledRows.filter((row) => row.day === day),
+                  ];
 
                   const selectedTransactions = selectedCalendarDate ? transactionsForDay(selectedCalendarDate) : [];
+
                   const monthIncome = dateTransactions.filter((row) => row.type === 'income').reduce((sum, row) => sum + row.amount, 0);
                   const monthExpenses = dateTransactions.filter((row) => row.type === 'expense').reduce((sum, row) => sum + Math.abs(row.amount), 0);
-                  const monthTransfers = dateTransactions.filter((row) => row.type === 'transfer').reduce((sum, row) => sum + Math.abs(row.amount), 0);
+                  const plannedIncome = visibleScheduledRows.filter((row) => row.type === 'income').reduce((sum, row) => sum + row.amount, 0);
+                  const plannedExpenses = visibleScheduledRows.filter((row) => row.type === 'expense').reduce((sum, row) => sum + Math.abs(row.amount), 0);
 
                   return (
                     <>
@@ -1492,7 +1508,7 @@ export default function MoneyProPreview() {
                         <div>
                           <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Money calendar</p>
                           <h2 className="mt-1 font-display text-3xl font-extrabold">Calendar</h2>
-                          <p className="mt-1 text-sm text-muted-foreground">See income, expenses, transfers and planned transactions by date.</p>
+                          <p className="mt-1 text-sm text-muted-foreground">Track completed and upcoming money events in one place.</p>
                         </div>
                         <div className="flex items-center gap-2">
                           <button type="button" onClick={() => setMonthOffset((value) => value - 1)} className="grid size-10 place-items-center rounded-xl border border-border hover:bg-muted"><ChevronLeft className="size-4" /></button>
@@ -1502,10 +1518,24 @@ export default function MoneyProPreview() {
                         </div>
                       </div>
 
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <Card className="p-4"><p className="text-[11px] font-bold text-muted-foreground">Income</p><p className="mt-1 text-xl font-extrabold text-primary">{money(monthIncome)}</p></Card>
-                        <Card className="p-4"><p className="text-[11px] font-bold text-muted-foreground">Expenses</p><p className="mt-1 text-xl font-extrabold text-destructive">{money(monthExpenses)}</p></Card>
-                        <Card className="p-4"><p className="text-[11px] font-bold text-muted-foreground">Transfers</p><p className="mt-1 text-xl font-extrabold">{money(monthTransfers)}</p></Card>
+                      <div className="grid gap-3 sm:grid-cols-4">
+                        {[
+                          ['all', 'All'],
+                          ['planned', 'Planned'],
+                          ['recurring', 'Recurring'],
+                          ['bills', 'Bills'],
+                        ].map(([value, label]) => (
+                          <button key={value} type="button" onClick={() => setCalendarView(value as typeof calendarView)} className={'rounded-2xl border p-4 text-left ' + (calendarView === value ? 'border-primary bg-primary/[0.06]' : 'border-border hover:bg-muted/40')}>
+                            <p className="text-xs font-bold">{label}</p>
+                            <p className="mt-1 text-lg font-extrabold">{value === 'all' ? visibleScheduledRows.length : scheduledRows.filter((row) => row.kind === value).length}</p>
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => setCalendarView('installments')} className={'rounded-xl border px-3 py-2 text-[10px] font-bold ' + (calendarView === 'installments' ? 'border-primary bg-primary/10 text-primary' : 'border-border')}>Installments</button>
+                        <span className="rounded-xl border border-border px-3 py-2 text-[10px] font-semibold text-muted-foreground">Upcoming income: {money(plannedIncome)}</span>
+                        <span className="rounded-xl border border-border px-3 py-2 text-[10px] font-semibold text-muted-foreground">Upcoming expenses: {money(plannedExpenses)}</span>
                       </div>
 
                       <Card className="overflow-hidden">
@@ -1519,16 +1549,11 @@ export default function MoneyProPreview() {
                             const dayRows = day ? transactionsForDay(day) : [];
                             const income = dayRows.filter((row) => row.type === 'income').reduce((sum, row) => sum + row.amount, 0);
                             const expense = dayRows.filter((row) => row.type === 'expense').reduce((sum, row) => sum + Math.abs(row.amount), 0);
+                            const scheduledCount = dayRows.filter((row) => row.kind !== 'transaction').length;
                             const isToday = day === new Date().getDate() && monthOffset === 0 && month === new Date().getMonth() && year === new Date().getFullYear();
                             const isSelected = day === selectedCalendarDate;
                             return (
-                              <button
-                                key={index}
-                                type="button"
-                                disabled={!day}
-                                onClick={() => day && setSelectedCalendarDate(day)}
-                                className={'min-h-24 border-b border-r border-border p-2 text-left transition-colors sm:min-h-28 ' + (!day ? 'bg-muted/10' : isSelected ? 'bg-primary/[0.08]' : 'hover:bg-muted/50')}
-                              >
+                              <button key={index} type="button" disabled={!day} onClick={() => day && setSelectedCalendarDate(day)} className={'min-h-24 border-b border-r border-border p-2 text-left transition-colors sm:min-h-28 ' + (!day ? 'bg-muted/10' : isSelected ? 'bg-primary/[0.08]' : 'hover:bg-muted/50')}>
                                 {day && (
                                   <>
                                     <div className="flex items-center justify-between">
@@ -1538,7 +1563,7 @@ export default function MoneyProPreview() {
                                     <div className="mt-2 space-y-1">
                                       {income > 0 && <p className="truncate rounded-md bg-primary/10 px-1.5 py-1 text-[9px] font-bold text-primary">+{money(income)}</p>}
                                       {expense > 0 && <p className="truncate rounded-md bg-destructive/10 px-1.5 py-1 text-[9px] font-bold text-destructive">-{money(expense)}</p>}
-                                      {dayRows.some((row) => row.type === 'transfer') && <p className="truncate rounded-md bg-blue-500/10 px-1.5 py-1 text-[9px] font-bold text-blue-600">Transfer</p>}
+                                      {scheduledCount > 0 && <p className="truncate rounded-md bg-amber-500/10 px-1.5 py-1 text-[9px] font-bold text-amber-700">{scheduledCount} upcoming</p>}
                                     </div>
                                   </>
                                 )}
@@ -1554,13 +1579,13 @@ export default function MoneyProPreview() {
                             <p className="text-xs font-bold uppercase tracking-[0.12em] text-primary">Selected day</p>
                             <h3 className="mt-1 font-display text-xl font-extrabold">{selectedCalendarDate ? selectedCalendarDate + ' ' + new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(base) : 'Choose a day'}</h3>
                           </div>
-                          <span className="text-xs font-semibold text-muted-foreground">{selectedTransactions.length} transaction{selectedTransactions.length === 1 ? '' : 's'}</span>
+                          <span className="text-xs font-semibold text-muted-foreground">{selectedTransactions.length} event{selectedTransactions.length === 1 ? '' : 's'}</span>
                         </div>
 
                         {selectedTransactions.length > 0 ? (
                           <div className="mt-4 divide-y divide-border">
                             {selectedTransactions.map((row) => (
-                              <button key={row.date + row.title} type="button" onClick={() => setSelected({ ...row, id: 'calendar-' + row.date + row.title, status: 'cleared', description: row.title, currency: accountRows.find((account) => account.name === row.account)?.currency ?? 'EGP' })} className="flex w-full items-center gap-3 py-3 text-left hover:bg-muted/40">
+                              <div key={row.id} className="flex items-center gap-3 py-3">
                                 <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-muted">
                                   {row.type === 'income' && <ArrowDownLeft className="size-4 text-primary" />}
                                   {row.type === 'expense' && <ArrowUpRight className="size-4" />}
@@ -1568,16 +1593,16 @@ export default function MoneyProPreview() {
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <p className="truncate text-sm font-bold">{row.title}</p>
-                                  <p className="mt-1 truncate text-[11px] text-muted-foreground">{row.account} · {row.category}</p>
+                                  <p className="mt-1 truncate text-[11px] text-muted-foreground">{row.account} · {row.category} · {row.status}{'repeat' in row ? ' · ' + row.repeat : ''}</p>
                                 </div>
-                                <span className={'text-sm font-extrabold ' + (row.amount >= 0 ? 'text-primary' : 'text-destructive')}>{row.amount >= 0 ? '+' : ''}{money(row.amount, accountRows.find((account) => account.name === row.account)?.currency ?? 'EGP')}</span>
-                              </button>
+                                <span className={'text-sm font-extrabold ' + (row.amount >= 0 ? 'text-primary' : 'text-destructive')}>{row.amount >= 0 ? '+' : ''}{money(row.amount, row.currency ?? 'EGP')}</span>
+                              </div>
                             ))}
                           </div>
                         ) : (
                           <div className="mt-4 rounded-2xl border border-dashed border-border p-6 text-center">
-                            <p className="text-sm font-bold">No transactions</p>
-                            <p className="mt-1 text-xs text-muted-foreground">There are no recorded transactions for this day.</p>
+                            <p className="text-sm font-bold">No events</p>
+                            <p className="mt-1 text-xs text-muted-foreground">Nothing is scheduled for this day.</p>
                           </div>
                         )}
                       </Card>
