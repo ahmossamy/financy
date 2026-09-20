@@ -130,6 +130,40 @@ function InvestmentsPreview() {
 
   const [tab, setTab] = useState<InvestmentTab>('overview');
   const [showAdd, setShowAdd] = useState(false);
+  const [holdings, setHoldings] = useState<Holding[]>([
+    { id: 'h1', asset: 'Orascom Construction', symbol: 'ORAS', type: 'Stock', portfolio: 'Wealth', platform: 'Thndr', quantity: 120, avgCost: 133.33, price: 160, currency: 'EGP' },
+    { id: 'h2', asset: 'EFG Holding', symbol: 'EFID', type: 'Stock', portfolio: 'Wealth', platform: 'Thndr', quantity: 400, avgCost: 20, price: 24.5, currency: 'EGP' },
+    { id: 'h3', asset: 'Telecom Egypt', symbol: 'ETEL', type: 'Stock', portfolio: 'Wealth', platform: 'Thndr', quantity: 300, avgCost: 20.13, price: 25.2, currency: 'EGP' },
+    { id: 'h4', asset: 'Abu Dhabi Islamic Bank', symbol: 'ADIB', type: 'Stock', portfolio: 'Wealth', platform: 'CIB', quantity: 180, avgCost: 36.06, price: 42.5, currency: 'EGP' },
+    { id: 'h5', asset: 'Elsewedy Electric', symbol: 'SWDY', type: 'Stock', portfolio: 'Retirement', platform: 'Thndr', quantity: 60, avgCost: 42.05, price: 48.8, currency: 'EGP' },
+    { id: 'h6', asset: 'Talaat Moustafa Group', symbol: 'TMGH', type: 'Stock', portfolio: 'Retirement', platform: 'Thndr', quantity: 45, avgCost: 53.44, price: 61.2, currency: 'EGP' },
+    { id: 'h7', asset: 'Sharia Equity Fund', symbol: 'CI-SHARIA', type: 'Fund', portfolio: 'Education', platform: 'CIB', quantity: 1000, avgCost: 10, price: 11.2, currency: 'EGP' },
+  ]);
+
+  const portfolios = [
+    { name: 'Wealth', type: 'Wealth', target: 60, value: 43800 },
+    { name: 'Retirement', type: 'Retirement', target: 25, value: 11900 },
+    { name: 'Education', type: 'Education', target: 15, value: 5800 },
+  ];
+
+  const platforms = [
+    { name: 'Thndr', type: 'Broker', value: 38200, holdings: 6 },
+    { name: 'CIB', type: 'Bank / Funds', value: 17100, holdings: 2 },
+    { name: 'Tilda', type: 'Investment platform', value: 6200, holdings: 0 },
+  ];
+
+  const activity = [
+    { date: '20 Sep 2026', action: 'Buy', asset: 'ORAS', portfolio: 'Wealth', platform: 'Thndr', amount: 5000 },
+    { date: '15 Sep 2026', action: 'Dividend', asset: 'ADIB', portfolio: 'Wealth', platform: 'CIB', amount: 780 },
+    { date: '10 Sep 2026', action: 'Buy', asset: 'CI-SHARIA', portfolio: 'Education', platform: 'CIB', amount: 3000 },
+    { date: '01 Sep 2026', action: 'Buy', asset: 'SWDY', portfolio: 'Retirement', platform: 'Thndr', amount: 2500 },
+  ];
+
+  const invested = holdings.reduce((sum, row) => sum + row.quantity * row.avgCost, 0);
+  const currentValue = holdings.reduce((sum, row) => sum + row.quantity * row.price, 0);
+  const unrealized = currentValue - invested;
+  const returnPct = invested ? (unrealized / invested) * 100 : 0;
+
   type Portfolio = {
     id: string;
     name: string;
