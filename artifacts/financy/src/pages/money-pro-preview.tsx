@@ -83,6 +83,7 @@ function AccountsPreview() {
   const [showAdd, setShowAdd] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<(typeof accountRows)[number] | null>(null);
   const [editingAccount, setEditingAccount] = useState<(typeof accountRows)[number] | null>(null);
+  const [accountFormType, setAccountFormType] = useState<(typeof accountRows)[number]['type']>('Bank');
   const [accountTransactions, setAccountTransactions] = useState<typeof transactionRows>(transactionRows);
   const [transactionFilter, setTransactionFilter] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
   const [transactionPeriod, setTransactionPeriod] = useState<'all' | 'today' | 'week' | 'month' | '30days' | 'custom'>('month');
@@ -167,36 +168,36 @@ function AccountsPreview() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const name = String(form.get('name') || 'New account').trim();
-    const type = String(form.get('type') || 'Bank') as typeof accountRows[number]['type'];
+    const type = String(form.get('type') || accountFormType) as typeof accountRows[number]['type'];
     const currency = String(form.get('currency') || 'EGP');
     const opening = Number(form.get('opening') || 0);
-    const nextAccount = { name, type, currency, balance: Number.isFinite(opening) ? opening : 0 };
+    const bank = String(form.get('bank') || '').trim();
+    const provider = String(form.get('provider') || '').trim();
+    const location = String(form.get('location') || '').trim();
+    const creditLimit = Number(form.get('creditLimit') || 0);
+    const outstanding = Number(form.get('outstanding') || 0);
+
+    const nextAccount = {
+      name,
+      type,
+      currency,
+      balance:
+        type === 'Credit card'
+          ? -Math.max(0, Number.isFinite(outstanding) ? outstanding : 0)
+          : Number.isFinite(opening) ? opening : 0,
+    };
+
     if (editingAccount) {
       setAccounts((current) => current.map((account) => account.name === editingAccount.name ? nextAccount : account));
       setSelectedAccount((current) => current?.name === editingAccount.name ? nextAccount : current);
     } else {
       setAccounts((current) => [...current, nextAccount]);
     }
+
     setShowAdd(false);
     setEditingAccount(null);
+    setAccountFormType('Bank');
     event.currentTarget.reset();
-  }
-
-  function openAccountDetails(account: (typeof accountRows)[number]) {
-    setSelectedAccount(account);
-    setTransactionFilter('all');
-    setAccountTransactions(
-      transactionRows.filter((transaction) =>
-        transaction.account.toLowerCase().includes(account.name.toLowerCase()) ||
-        account.name.toLowerCase().includes(transaction.account.toLowerCase().split(' ')[0]),
-      ),
-    );
-  }
-
-  function openEditAccount(account: (typeof accountRows)[number]) {
-    setSelectedAccount(null);
-    setEditingAccount(account);
-    setShowAdd(true);
   }
 
   return (
@@ -210,6 +211,7 @@ function AccountsPreview() {
         <button
           onClick={() => {
             setEditingAccount(null);
+            setAccountFormType('Bank');
             setShowAdd(true);
           }}
           className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm"
@@ -539,38 +541,120 @@ function AccountsPreview() {
               <button onClick={() => setShowAdd(false)} className="rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-muted">Close</button>
             </div>
 
-            <form onSubmit={submitAccount} className="mt-6 space-y-4">
-              <label className="block">
-                <span className="mb-2 block text-xs font-bold">Account name</span>
-                <input name="name" required defaultValue={editingAccount?.name ?? ''} placeholder="e.g. CIB Main" className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
-              </label>
-              <label className="block">
-                <span className="mb-2 block text-xs font-bold">Opening balance</span>
-                <input name="opening" type="number" step="0.01" defaultValue={editingAccount?.balance ?? 0} className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
-              </label>
+            <form onSubmit={submitAccount} className="mt-6 space-y-5">
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-2 block text-xs font-bold">Type</span>
-                  <select name="type" defaultValue={editingAccount?.type ?? 'Bank'} className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none">
+                  <span className="mb-2 block text-xs font-bold">Account name *</span>
+                  <input
+                    name="name"
+                    required
+                    defaultValue={editingAccount?.name ?? ''}
+                    placeholder={accountFormType === 'Credit card' ? 'CIB Visa' : 'CIB Current Account'}
+                    className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-xs font-bold">Account type *</span>
+                  <select
+                    name="type"
+                    value={accountFormType}
+                    onChange={(event) => setAccountFormType(event.target.value as typeof accountFormType)}
+                    className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                  >
                     <option>Bank</option>
                     <option>Cash</option>
-                    <option>Investment</option>
                     <option>Credit card</option>
+                    <option>Prepaid</option>
+                    <option>E-Wallet</option>
                   </select>
                 </label>
+
+                {accountFormType === 'Bank' && (
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-bold">Bank / Institution *</span>
+                    <input name="bank" required defaultValue={editingAccount?.type === 'Bank' ? 'CIB' : ''} placeholder="CIB" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                  </label>
+                )}
+
+                {accountFormType === 'Cash' && (
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-bold">Location / Wallet Name *</span>
+                    <input name="location" required placeholder="Home cash" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                  </label>
+                )}
+
+                {accountFormType === 'E-Wallet' && (
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-bold">Provider *</span>
+                    <input name="provider" required placeholder="Vodafone Cash" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                  </label>
+                )}
+
+                {accountFormType === 'Credit card' && (
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-bold">Bank / Provider *</span>
+                    <input name="bank" required defaultValue={editingAccount?.type === 'Credit card' ? 'CIB' : ''} placeholder="CIB" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                  </label>
+                )}
+
                 <label className="block">
-                  <span className="mb-2 block text-xs font-bold">Currency</span>
-                  <select name="currency" defaultValue={editingAccount?.currency ?? 'EGP'} className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none">
-                    <option>EGP</option>
-                    <option>USD</option>
-                    <option>AED</option>
-                    <option>SAR</option>
+                  <span className="mb-2 block text-xs font-bold">Currency *</span>
+                  <select name="currency" defaultValue={editingAccount?.currency ?? 'EGP'} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10">
+                    <option>EGP — Egyptian Pound</option>
+                    <option>USD — US Dollar</option>
+                    <option>AED — UAE Dirham</option>
+                    <option>SAR — Saudi Riyal</option>
                   </select>
+                  <span className="mt-1 block text-[10px] text-muted-foreground">More currencies can be added later from Settings.</span>
+                </label>
+
+                {accountFormType !== 'Credit card' && (
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-bold">Opening balance</span>
+                    <input name="opening" type="number" step="0.01" defaultValue={editingAccount?.balance ?? 0} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                  </label>
+                )}
+
+                {accountFormType === 'Credit card' && (
+                  <>
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-bold">Credit limit *</span>
+                      <input name="creditLimit" required type="number" min="0" step="0.01" placeholder="50,000" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-bold">Current outstanding</span>
+                      <input name="outstanding" type="number" min="0" step="0.01" defaultValue={editingAccount?.balance ? Math.abs(editingAccount.balance) : 0} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-bold">Statement day</span>
+                      <input name="statementDay" type="number" min="1" max="31" step="1" placeholder="1 - 31" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-bold">Payment due day</span>
+                      <input name="dueDay" type="number" min="1" max="31" step="1" placeholder="1 - 31" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                    </label>
+                  </>
+                )}
+
+                <label className="block sm:col-span-2">
+                  <span className="mb-2 block text-xs font-bold">Notes</span>
+                  <textarea
+                    name="notes"
+                    defaultValue=""
+                    rows={4}
+                    placeholder="Optional notes..."
+                    className="min-h-24 w-full rounded-xl border border-input bg-background px-3 py-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                  />
                 </label>
               </div>
-              <div className="flex justify-end gap-2 border-t border-border pt-4">
-                <button type="button" onClick={() => setShowAdd(false)} className="h-10 rounded-xl border border-border px-4 text-sm font-bold">Cancel</button>
-                <button type="submit" className="h-10 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground">{editingAccount ? 'Save changes' : 'Create account'}</button>
+
+              <div className="flex justify-end gap-2 border-t border-border pt-5">
+                <button type="button" onClick={() => { setShowAdd(false); setEditingAccount(null); }} className="h-10 rounded-xl border border-border px-4 text-xs font-bold">Cancel</button>
+                <button type="submit" className="h-10 rounded-xl bg-primary px-5 text-xs font-bold text-primary-foreground">{editingAccount ? 'Save changes' : 'Create'}</button>
               </div>
             </form>
           </div>
