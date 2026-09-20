@@ -85,6 +85,10 @@ function AccountsPreview() {
   const [editingAccount, setEditingAccount] = useState<(typeof accountRows)[number] | null>(null);
   const [accountTransactions, setAccountTransactions] = useState<typeof transactionRows>(transactionRows);
   const [transactionFilter, setTransactionFilter] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
+  const [transactionPeriod, setTransactionPeriod] = useState<'all' | 'today' | 'week' | 'month' | '30days' | 'custom'>('month');
+  const [transactionFrom, setTransactionFrom] = useState('');
+  const [transactionTo, setTransactionTo] = useState('');
+  const [selectedTransaction, setSelectedTransaction] = useState<(typeof transactionRows)[number] | null>(null);
   const [accounts, setAccounts] = useState(accountRows);
 
   const filtered = accounts.filter((account) => {
@@ -103,6 +107,61 @@ function AccountsPreview() {
     investments: accounts.filter((a) => a.type === 'Investment' && a.currency === 'EGP').reduce((s, a) => s + a.balance, 0),
     cards: accounts.filter((a) => a.type === 'Credit card' && a.currency === 'EGP').reduce((s, a) => s + Math.abs(a.balance), 0),
   };
+
+  const filteredAccountTransactions = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now);
+    const end = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+
+    if (transactionPeriod === 'today') {
+      // keep today's range
+    } else if (transactionPeriod === 'week') {
+      const day = start.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      start.setDate(start.getDate() - diff);
+    } else if (transactionPeriod === 'month') {
+      start.setDate(1);
+    } else if (transactionPeriod === '30days') {
+      start.setDate(start.getDate() - 29);
+    }
+
+    return accountTransactions.filter((tx) => {
+      const typeMatches =
+        transactionFilter === 'all' || tx.type === transactionFilter;
+      if (!typeMatches) return false;
+      if (transactionPeriod === 'all') return true;
+
+      if (transactionPeriod === 'custom') {
+        const date = new Date(tx.date + ' 2026');
+        const label = tx.date.slice(0, 2) + ' Sep 2026';
+        const normalized = new Date(label);
+        if (Number.isNaN(normalized.getTime())) return true;
+        if (transactionFrom && normalized < new Date(transactionFrom + 'T00:00:00')) return false;
+        if (transactionTo && normalized > new Date(transactionTo + 'T23:59:59')) return false;
+        return true;
+      }
+
+      const normalized = new Date(tx.date + ' 2026');
+      if (Number.isNaN(normalized.getTime())) return true;
+      return normalized >= start && normalized <= end;
+    });
+  }, [accountTransactions, transactionFilter, transactionPeriod, transactionFrom, transactionTo]);
+
+  const transactionBalances = useMemo(() => {
+    if (!selectedAccount) return new Map<string, number>();
+    const sorted = [...accountTransactions].sort((a, b) => new Date(b.date + ' 2026').getTime() - new Date(a.date + ' 2026').getTime());
+    let running = selectedAccount.balance;
+    const result = new Map<string, number>();
+
+    for (const tx of sorted) {
+      result.set(tx.date + tx.title, running);
+      running -= tx.amount;
+    }
+
+    return result;
+  }, [selectedAccount, accountTransactions]);
 
   function submitAccount(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -318,11 +377,13 @@ function AccountsPreview() {
 
               <Card className="overflow-hidden">
                 <div className="border-b border-border p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h4 className="font-display text-lg font-extrabold">Transactions</h4>
-                      <p className="mt-1 text-[11px] text-muted-foreground">Activity recorded against this account.</p>
-                    </div>
+                  <div>
+                    <h4 className="font-display text-lg font-extrabold">Transactions</h4>
+                    <p className="mt-1 text-[11px] text-muted-foreground">Filter activity by type and date, and see the running balance after each entry.</p>
+                  </div>
+                </div>
+                <div className="border-b border-border bg-muted/20 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex flex-wrap gap-2">
                       {[
                         ['all', 'All'],
@@ -332,40 +393,138 @@ function AccountsPreview() {
                       ].map(([value, label]) => (
                         <button
                           key={value}
+                          type="button"
                           onClick={() => setTransactionFilter(value as typeof transactionFilter)}
-                          className={'rounded-xl px-3 py-2 text-[11px] font-bold ' + (transactionFilter === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground')}
+                          className={'rounded-xl px-3 py-2 text-[11px] font-bold ' + (transactionFilter === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground')}
                         >
                           {label}
                         </button>
                       ))}
                     </div>
+
+                    <select
+                      value={transactionPeriod}
+                      onChange={(event) => setTransactionPeriod(event.target.value as typeof transactionPeriod)}
+                      className="h-10 rounded-xl border border-border bg-background px-3 text-xs font-semibold outline-none focus:border-primary"
+                    >
+                      <option value="all">All time</option>
+                      <option value="today">Today</option>
+                      <option value="week">This week</option>
+                      <option value="month">This month</option>
+                      <option value="30days">Last 30 days</option>
+                      <option value="custom">Custom period</option>
+                    </select>
                   </div>
+
+                  {transactionPeriod === 'custom' && (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <label className="block">
+                        <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">From</span>
+                        <input
+                          type="date"
+                          value={transactionFrom}
+                          onChange={(event) => setTransactionFrom(event.target.value)}
+                          className="h-10 w-full rounded-xl border border-border bg-background px-3 text-xs outline-none focus:border-primary"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">To</span>
+                        <input
+                          type="date"
+                          value={transactionTo}
+                          onChange={(event) => setTransactionTo(event.target.value)}
+                          className="h-10 w-full rounded-xl border border-border bg-background px-3 text-xs outline-none focus:border-primary"
+                        />
+                      </label>
+                    </div>
+                  )}
                 </div>
 
                 <div className="divide-y divide-border">
-                  {accountTransactions.filter((tx) => transactionFilter === 'all' || tx.type === transactionFilter).map((tx) => (
-                    <div key={tx.date + tx.title} className="flex items-center justify-between gap-3 px-4 py-4">
-                      <div className="flex min-w-0 items-center gap-3">
+                  {filteredAccountTransactions.map((tx) => {
+                    const balanceAfter = transactionBalances.get(tx.date + tx.title) ?? selectedAccount.balance;
+                    return (
+                      <button
+                        key={tx.date + tx.title}
+                        type="button"
+                        onClick={() => setSelectedTransaction(tx)}
+                        className="flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-primary/[0.035]"
+                      >
                         <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted">
                           {tx.type === 'income' && <ArrowDownLeft className="size-4 text-primary" />}
                           {tx.type === 'expense' && <ArrowUpRight className="size-4" />}
                           {tx.type === 'transfer' && <ArrowLeftRight className="size-4 text-primary" />}
                         </div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-bold">{tx.title}</p>
                           <p className="mt-1 truncate text-[11px] text-muted-foreground">{tx.date} · {tx.category} · {tx.account}</p>
+                          <p className="mt-2 text-[11px] font-semibold text-muted-foreground">
+                            Balance after transaction
+                          </p>
+                          <p className="mt-0.5 text-sm font-extrabold text-foreground">
+                            {money(balanceAfter, selectedAccount.currency)}
+                          </p>
                         </div>
-                      </div>
-                      <p className={'shrink-0 text-sm font-extrabold ' + (tx.amount >= 0 ? 'text-primary' : 'text-destructive')}>
-                        {tx.amount >= 0 ? '+' : ''}{money(tx.amount, selectedAccount.currency)}
-                      </p>
-                    </div>
-                  ))}
-                  {accountTransactions.filter((tx) => transactionFilter === 'all' || tx.type === transactionFilter).length === 0 && (
-                    <div className="px-5 py-10 text-center text-xs text-muted-foreground">No transactions for this account.</div>
+                        <div className="shrink-0 text-right">
+                          <p className={'text-sm font-extrabold ' + (tx.amount >= 0 ? 'text-primary' : 'text-destructive')}>
+                            {tx.amount >= 0 ? '+' : ''}{money(tx.amount, selectedAccount.currency)}
+                          </p>
+                          <p className="mt-2 text-[10px] font-semibold text-muted-foreground">Tap for details</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {filteredAccountTransactions.length === 0 && (
+                    <div className="px-5 py-10 text-center text-xs text-muted-foreground">No transactions match this filter.</div>
                   )}
                 </div>
               </Card>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedTransaction && selectedAccount && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center sm:p-6">
+          <div className="w-full max-w-xl overflow-hidden rounded-[28px] border border-border bg-card shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-5">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Transaction details</p>
+                <h3 className="mt-1 font-display text-2xl font-extrabold">{selectedTransaction.title}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{selectedTransaction.category} · {selectedTransaction.account}</p>
+              </div>
+              <button onClick={() => setSelectedTransaction(null)} className="rounded-xl border border-border px-3 py-2 text-xs font-bold hover:bg-muted">Close</button>
+            </div>
+            <div className="space-y-4 p-6">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Card className="p-4">
+                  <p className="text-[11px] text-muted-foreground">Amount</p>
+                  <p className={'mt-2 font-display text-2xl font-extrabold ' + (selectedTransaction.amount >= 0 ? 'text-primary' : 'text-destructive')}>
+                    {selectedTransaction.amount >= 0 ? '+' : ''}{money(selectedTransaction.amount, selectedAccount.currency)}
+                  </p>
+                </Card>
+                <Card className="p-4">
+                  <p className="text-[11px] text-muted-foreground">Date</p>
+                  <p className="mt-2 text-sm font-bold">{selectedTransaction.date}</p>
+                </Card>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Card className="p-4">
+                  <p className="text-[11px] text-muted-foreground">Type</p>
+                  <p className="mt-2 text-sm font-bold capitalize">{selectedTransaction.type}</p>
+                </Card>
+                <Card className="p-4">
+                  <p className="text-[11px] text-muted-foreground">Balance after transaction</p>
+                  <p className="mt-2 text-sm font-extrabold">{money(transactionBalances.get(selectedTransaction.date + selectedTransaction.title) ?? selectedAccount.balance, selectedAccount.currency)}</p>
+                </Card>
+              </div>
+              <Card className="p-4">
+                <p className="text-[11px] text-muted-foreground">Account</p>
+                <p className="mt-2 text-sm font-bold">{selectedAccount.name} · {selectedAccount.currency}</p>
+              </Card>
+              <div className="flex justify-end gap-2 border-t border-border pt-4">
+                <button onClick={() => setSelectedTransaction(null)} className="h-10 rounded-xl border border-border px-4 text-xs font-bold">Close</button>
+              </div>
             </div>
           </div>
         </div>
