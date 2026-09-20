@@ -81,6 +81,10 @@ function AccountsPreview() {
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<(typeof accountRows)[number] | null>(null);
+  const [editingAccount, setEditingAccount] = useState<(typeof accountRows)[number] | null>(null);
+  const [accountTransactions, setAccountTransactions] = useState<typeof transactionRows>(transactionRows);
+  const [transactionFilter, setTransactionFilter] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
   const [accounts, setAccounts] = useState(accountRows);
 
   const filtered = accounts.filter((account) => {
@@ -106,9 +110,34 @@ function AccountsPreview() {
     const name = String(form.get('name') || 'New account').trim();
     const type = String(form.get('type') || 'Bank') as typeof accountRows[number]['type'];
     const currency = String(form.get('currency') || 'EGP');
-    setAccounts((current) => [...current, { name, type, currency, balance: 0 }]);
+    const opening = Number(form.get('opening') || 0);
+    const nextAccount = { name, type, currency, balance: Number.isFinite(opening) ? opening : 0 };
+    if (editingAccount) {
+      setAccounts((current) => current.map((account) => account.name === editingAccount.name ? nextAccount : account));
+      setSelectedAccount((current) => current?.name === editingAccount.name ? nextAccount : current);
+    } else {
+      setAccounts((current) => [...current, nextAccount]);
+    }
     setShowAdd(false);
+    setEditingAccount(null);
     event.currentTarget.reset();
+  }
+
+  function openAccountDetails(account: (typeof accountRows)[number]) {
+    setSelectedAccount(account);
+    setTransactionFilter('all');
+    setAccountTransactions(
+      transactionRows.filter((transaction) =>
+        transaction.account.toLowerCase().includes(account.name.toLowerCase()) ||
+        account.name.toLowerCase().includes(transaction.account.toLowerCase().split(' ')[0]),
+      ),
+    );
+  }
+
+  function openEditAccount(account: (typeof accountRows)[number]) {
+    setSelectedAccount(null);
+    setEditingAccount(account);
+    setShowAdd(true);
   }
 
   return (
@@ -120,7 +149,10 @@ function AccountsPreview() {
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Manage cash, banks, investment accounts and credit cards with a clear register-style view.</p>
         </div>
         <button
-          onClick={() => setShowAdd(true)}
+          onClick={() => {
+            setEditingAccount(null);
+            setShowAdd(true);
+          }}
           className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm"
         >
           <CirclePlus className="size-4" />
@@ -207,7 +239,19 @@ function AccountsPreview() {
 
         <div className="divide-y divide-border">
           {filtered.map((account) => (
-            <div key={account.name} className="grid grid-cols-2 items-center gap-3 px-5 py-4 transition-colors hover:bg-muted/20 sm:grid-cols-[1.7fr_.9fr_.6fr_1fr_auto]">
+            <div
+              key={account.name}
+              role="button"
+              tabIndex={0}
+              onClick={() => openAccountDetails(account)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  openAccountDetails(account);
+                }
+              }}
+              className="grid cursor-pointer grid-cols-2 items-center gap-3 px-5 py-4 transition-colors hover:bg-primary/[0.035] sm:grid-cols-[1.7fr_.9fr_.6fr_1fr_auto]"
+            >
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold">{account.name}</p>
                 <p className="mt-1 text-[11px] text-muted-foreground sm:hidden">{account.type} · {account.currency}</p>
@@ -217,7 +261,15 @@ function AccountsPreview() {
               <span className={'text-right text-sm font-extrabold ' + (account.balance < 0 ? 'text-destructive' : '')}>
                 {money(account.balance, account.currency)}
               </span>
-              <button aria-label={'Open ' + account.name} className="hidden size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground sm:grid">
+              <button
+                type="button"
+                aria-label={'Edit ' + account.name}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openEditAccount(account);
+                }}
+                className="hidden size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground sm:grid"
+              >
                 <MoreHorizontal className="size-4" />
               </button>
             </div>
@@ -232,13 +284,100 @@ function AccountsPreview() {
         </div>
       </Card>
 
+      {selectedAccount && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center sm:p-6">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-[28px] border border-border bg-card shadow-2xl">
+            <div className="sticky top-0 z-20 flex items-start justify-between border-b border-border bg-card px-6 py-5">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Account details</p>
+                <h3 className="mt-1 font-display text-2xl font-extrabold">{selectedAccount.name}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{selectedAccount.type} · {selectedAccount.currency}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => openEditAccount(selectedAccount)}
+                  className="rounded-xl border border-border px-3 py-2 text-xs font-bold hover:bg-muted"
+                >
+                  Edit account
+                </button>
+                <button
+                  onClick={() => setSelectedAccount(null)}
+                  className="rounded-xl border border-border px-3 py-2 text-xs font-bold hover:bg-muted"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-5 p-6">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Current balance</p><p className="mt-2 font-display text-2xl font-extrabold">{money(selectedAccount.balance, selectedAccount.currency)}</p></Card>
+                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Account type</p><p className="mt-2 text-sm font-bold">{selectedAccount.type}</p></Card>
+                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Currency</p><p className="mt-2 text-sm font-bold">{selectedAccount.currency}</p></Card>
+              </div>
+
+              <Card className="overflow-hidden">
+                <div className="border-b border-border p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="font-display text-lg font-extrabold">Transactions</h4>
+                      <p className="mt-1 text-[11px] text-muted-foreground">Activity recorded against this account.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        ['all', 'All'],
+                        ['income', 'Income'],
+                        ['expense', 'Expenses'],
+                        ['transfer', 'Transfers'],
+                      ].map(([value, label]) => (
+                        <button
+                          key={value}
+                          onClick={() => setTransactionFilter(value as typeof transactionFilter)}
+                          className={'rounded-xl px-3 py-2 text-[11px] font-bold ' + (transactionFilter === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground')}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-border">
+                  {accountTransactions.filter((tx) => transactionFilter === 'all' || tx.type === transactionFilter).map((tx) => (
+                    <div key={tx.date + tx.title} className="flex items-center justify-between gap-3 px-4 py-4">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted">
+                          {tx.type === 'income' && <ArrowDownLeft className="size-4 text-primary" />}
+                          {tx.type === 'expense' && <ArrowUpRight className="size-4" />}
+                          {tx.type === 'transfer' && <ArrowLeftRight className="size-4 text-primary" />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold">{tx.title}</p>
+                          <p className="mt-1 truncate text-[11px] text-muted-foreground">{tx.date} · {tx.category} · {tx.account}</p>
+                        </div>
+                      </div>
+                      <p className={'shrink-0 text-sm font-extrabold ' + (tx.amount >= 0 ? 'text-primary' : 'text-destructive')}>
+                        {tx.amount >= 0 ? '+' : ''}{money(tx.amount, selectedAccount.currency)}
+                      </p>
+                    </div>
+                  ))}
+                  {accountTransactions.filter((tx) => transactionFilter === 'all' || tx.type === transactionFilter).length === 0 && (
+                    <div className="px-5 py-10 text-center text-xs text-muted-foreground">No transactions for this account.</div>
+                  )}
+                </div>
+              </Card>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-[28px] border border-border bg-card p-6 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Accounts</p>
-                <h3 className="mt-1 font-display text-2xl font-extrabold">New account</h3>
+                <h3 className="mt-1 font-display text-2xl font-extrabold">{editingAccount ? 'Edit account' : 'New account'}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">Add a cash, bank, investment or credit card account.</p>
               </div>
               <button onClick={() => setShowAdd(false)} className="rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-muted">Close</button>
@@ -247,12 +386,16 @@ function AccountsPreview() {
             <form onSubmit={submitAccount} className="mt-6 space-y-4">
               <label className="block">
                 <span className="mb-2 block text-xs font-bold">Account name</span>
-                <input name="name" required placeholder="e.g. CIB Main" className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                <input name="name" required defaultValue={editingAccount?.name ?? ''} placeholder="e.g. CIB Main" className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-xs font-bold">Opening balance</span>
+                <input name="opening" type="number" step="0.01" defaultValue={editingAccount?.balance ?? 0} className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
               </label>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block">
                   <span className="mb-2 block text-xs font-bold">Type</span>
-                  <select name="type" className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none">
+                  <select name="type" defaultValue={editingAccount?.type ?? 'Bank'} className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none">
                     <option>Bank</option>
                     <option>Cash</option>
                     <option>Investment</option>
@@ -261,7 +404,7 @@ function AccountsPreview() {
                 </label>
                 <label className="block">
                   <span className="mb-2 block text-xs font-bold">Currency</span>
-                  <select name="currency" className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none">
+                  <select name="currency" defaultValue={editingAccount?.currency ?? 'EGP'} className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none">
                     <option>EGP</option>
                     <option>USD</option>
                     <option>AED</option>
@@ -271,7 +414,7 @@ function AccountsPreview() {
               </div>
               <div className="flex justify-end gap-2 border-t border-border pt-4">
                 <button type="button" onClick={() => setShowAdd(false)} className="h-10 rounded-xl border border-border px-4 text-sm font-bold">Cancel</button>
-                <button type="submit" className="h-10 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground">Create account</button>
+                <button type="submit" className="h-10 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground">{editingAccount ? 'Save changes' : 'Create account'}</button>
               </div>
             </form>
           </div>
