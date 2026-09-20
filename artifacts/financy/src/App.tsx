@@ -73,18 +73,14 @@ type NavItem = {
 };
 
 const primaryNav: NavItem[] = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Transactions', href: '/transactions', icon: ArrowLeftRight },
-  { label: 'Money', href: '/money', icon: WalletCards },
-  { label: 'Investments', href: '/investments', icon: LineChart },
-  { label: 'Assets', href: '/assets', icon: Landmark },
-  { label: 'Liabilities', href: '/liabilities', icon: CreditCard },
-  { label: 'Budgets', href: '/budgets', icon: PieChart },
-  { label: 'Goals', href: '/goals', icon: Target },
-  { label: 'Reports', href: '/reports', icon: FileBarChart },
-  { label: 'Calendar', href: '/calendar', icon: CalendarDays },
-  { label: 'Search', href: '/search', icon: Search },
-  { label: 'Notifications', href: '/notifications', icon: Bell },
+  { label: 'Overview', href: '/pro', icon: LayoutDashboard },
+  { label: 'Accounts', href: '/pro?screen=accounts', icon: WalletCards },
+  { label: 'Transactions', href: '/pro?screen=transactions', icon: ArrowLeftRight },
+  { label: 'Investments', href: '/pro?screen=investments', icon: LineChart },
+  { label: 'Budgets', href: '/pro?screen=budgets', icon: PieChart },
+  { label: 'Reports', href: '/pro?screen=reports', icon: FileBarChart },
+  { label: 'Calendar', href: '/pro?screen=calendar', icon: CalendarDays },
+  { label: 'Settings', href: '/settings', icon: SettingsIcon },
 ];
 
 const moreNav: NavItem[] = [
@@ -92,10 +88,10 @@ const moreNav: NavItem[] = [
 ];
 
 const mobileNav: NavItem[] = [
-  { label: 'Home', href: '/dashboard', icon: Home },
-  { label: 'Money', href: '/money', icon: WalletCards },
-  { label: 'Investments', href: '/investments', icon: LineChart },
-  { label: 'Reports', href: '/reports', icon: FileBarChart },
+  { label: 'Accounts', href: '/pro?screen=accounts', icon: WalletCards },
+  { label: 'Transactions', href: '/pro?screen=transactions', icon: ArrowLeftRight },
+  { label: 'Investments', href: '/pro?screen=investments', icon: LineChart },
+  { label: 'Reports', href: '/pro?screen=reports', icon: FileBarChart },
 ];
 
 const moneySections = [
