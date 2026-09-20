@@ -284,6 +284,8 @@ export default function Transactions({
       end.setHours(23, 59, 59, 999);
     }
 
+    const seenTransferIds = new Set<string>();
+
     return transactions.filter((transaction) => {
       const matchesType =
         activeFilter === 'all' || transaction.type === activeFilter;
@@ -320,6 +322,17 @@ export default function Transactions({
       ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query));
+    }).filter((transaction) => {
+      if (transaction.type !== 'transfer' || !transaction.transfer_id) {
+        return true;
+      }
+
+      if (seenTransferIds.has(transaction.transfer_id)) {
+        return false;
+      }
+
+      seenTransferIds.add(transaction.transfer_id);
+      return true;
     });
   }, [transactions, accounts, categories, activeFilter, search, period, customFrom, customTo]);
 
