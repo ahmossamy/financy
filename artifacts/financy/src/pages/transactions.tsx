@@ -434,7 +434,7 @@ export default function Transactions({
       received_amount: receivedAmount,
       exchange_rate: exchangeRate,
       fee,
-      transaction_date: transferForm.transaction_date,
+      transfer_date: transferForm.transaction_date,
       notes: [transferForm.tag.trim() ? `[Tag: ${transferForm.tag.trim()}]` : '', transferForm.notes.trim()].filter(Boolean).join('\n') || null,
       status: 'completed',
     };
