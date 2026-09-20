@@ -432,7 +432,6 @@ export default function Transactions({
       amount: sentAmount,
       currency_code: transferForm.sent_currency,
       received_amount: receivedAmount,
-      received_currency_code: transferForm.received_currency,
       exchange_rate: exchangeRate,
       fee,
       transaction_date: transferForm.transaction_date,
