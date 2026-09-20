@@ -94,6 +94,7 @@ type TransactionRecord = {
   account: string;
   category: string;
   amount: number;
+  currency?: string;
   type: 'income' | 'expense' | 'transfer';
   payee?: string;
   description?: string;
@@ -128,6 +129,7 @@ function TransactionsPreview() {
     transactionRows.map((row, index) => ({
       ...row,
       id: 'tx-' + index,
+      currency: accountRows.find((account) => account.name === row.account)?.currency ?? 'EGP',
       status: 'cleared',
       description: row.title,
       className: 'Personal',
@@ -321,6 +323,7 @@ function TransactionsPreview() {
       title,
       account: entryMode === 'transfer' ? formAccount + ' → ' + transferTo : formAccount,
       category,
+      currency: formCurrency,
       amount: type === 'expense' ? -amount : amount,
       type,
       payee: String(form.get('payee') || ''),
@@ -403,7 +406,7 @@ function TransactionsPreview() {
                 <td className="max-w-[250px] px-4 py-3 font-semibold">{row.title}</td>
                 <td className="px-4 py-3"><span className="inline-flex rounded-md bg-muted px-2 py-1 text-[10px] font-semibold">{row.category}</span></td>
                 <td className="px-4 py-3 text-xs font-semibold">{row.account}</td>
-                <td className={'px-4 py-3 text-right font-extrabold ' + (row.amount >= 0 ? 'text-emerald-600' : 'text-red-600')}>{row.amount >= 0 ? '+' : ''}{money(row.amount)}</td>
+                <td className={'px-4 py-3 text-right font-extrabold ' + (row.amount >= 0 ? 'text-emerald-600' : 'text-red-600')}>{row.amount >= 0 ? '+' : ''}{money(row.amount, row.currency ?? 'EGP')}</td>
                 <td className="px-4 py-3"><span className={'inline-flex rounded-md px-2 py-1 text-[10px] font-bold ' + (row.status === 'cleared' ? 'bg-emerald-100 text-emerald-700' : row.status === 'planned' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-700')}>{row.status === 'cleared' ? 'Paid' : row.status === 'planned' ? 'Planned' : 'Not cleared'}</span></td>
                 <td className="px-4 py-3 text-center text-muted-foreground">{row.attachments?.length ? '📎' : '—'}</td>
               </tr>
@@ -416,10 +419,10 @@ function TransactionsPreview() {
       {selected && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-foreground/25 p-3 backdrop-blur-sm">
           <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl border border-border bg-card shadow-2xl">
-            <div className="flex items-start justify-between border-b border-border px-5 py-4"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Transaction details</p><h3 className="mt-1 text-xl font-extrabold">{selected.title}</h3><p className="mt-1 text-xs text-muted-foreground">{selected.date} · {selected.account}</p></div><button type="button" onClick={() => setSelected(null)} className="grid size-9 place-items-center rounded-xl hover:bg-muted"><X className="size-5" /></button></div>
+            <div className="flex items-start justify-between border-b border-border px-5 py-4"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Transaction details</p><h3 className="mt-1 text-xl font-extrabold">{selected.title}</h3><p className="mt-1 text-xs text-muted-foreground">{selected.date} · {selected.account} · {selected.currency ?? 'EGP'}</p></div><button type="button" onClick={() => setSelected(null)} className="grid size-9 place-items-center rounded-xl hover:bg-muted"><X className="size-5" /></button></div>
             <div className="space-y-3 p-5">
-              <Card className="p-4"><p className="text-xs text-muted-foreground">Amount</p><p className={'mt-2 text-3xl font-extrabold ' + (selected.amount >= 0 ? 'text-emerald-600' : 'text-red-600')}>{selected.amount >= 0 ? '+' : ''}{money(selected.amount)}</p></Card>
-              {selected.items?.length ? <Card className="p-4"><p className="text-xs font-bold">Items</p><div className="mt-2 divide-y divide-border">{selected.items.map((item) => <div key={item.id} className="flex items-center justify-between py-2"><div><p className="text-sm font-semibold">{item.name || item.category}</p><p className="text-[10px] text-muted-foreground">{item.category}</p></div><span className="font-bold">{money(item.amount)}</span></div>)}</div></Card> : null}
+              <Card className="p-4"><p className="text-xs text-muted-foreground">Amount</p><p className={'mt-2 text-3xl font-extrabold ' + (selected.amount >= 0 ? 'text-emerald-600' : 'text-red-600')}>{selected.amount >= 0 ? '+' : ''}{money(selected.amount, selected.currency ?? 'EGP')}</p></Card>
+              {selected.items?.length ? <Card className="p-4"><p className="text-xs font-bold">Items</p><div className="mt-2 divide-y divide-border">{selected.items.map((item) => <div key={item.id} className="flex items-center justify-between py-2"><div><p className="text-sm font-semibold">{item.name || item.category}</p></div><span className="font-bold">{money(item.amount, selected.currency ?? 'EGP')}</span></div>)}</div></Card> : null}
               {selected.attachments?.length ? <Card className="p-4"><p className="text-xs font-bold">Attachments</p><div className="mt-2 space-y-1">{selected.attachments.map((file) => <p key={file.name} className="text-xs font-semibold">{file.name}</p>)}</div></Card> : null}
               <div className="grid gap-3 sm:grid-cols-2"><Card className="p-4"><p className="text-[11px] text-muted-foreground">Type</p><p className="mt-1 text-sm font-bold capitalize">{selected.type}</p></Card><Card className="p-4"><p className="text-[11px] text-muted-foreground">Status</p><p className="mt-1 text-sm font-bold">{selected.status}</p></Card><Card className="p-4"><p className="text-[11px] text-muted-foreground">Category</p><p className="mt-1 text-sm font-bold">{selected.category}</p></Card><Card className="p-4"><p className="text-[11px] text-muted-foreground">Fee</p><p className="mt-1 text-sm font-bold">{money(selected.fee || 0)}</p></Card></div>
               <Card className="p-4"><p className="text-[11px] text-muted-foreground">Payee / Description</p><p className="mt-2 text-sm font-bold">{selected.payee || '—'}</p><p className="mt-1 text-xs text-muted-foreground">{selected.description || '—'}</p></Card>
