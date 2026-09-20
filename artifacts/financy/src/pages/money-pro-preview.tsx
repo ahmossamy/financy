@@ -460,13 +460,13 @@ function AccountsPreview() {
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-bold">{tx.title}</p>
                           <p className="mt-1 truncate text-[11px] text-muted-foreground">{tx.date} · {tx.category} · {tx.account}</p>
-                          <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                            {money(balanceAfter, selectedAccount.currency)}
-                          </p>
                         </div>
                         <div className="shrink-0 text-right">
                           <p className={'text-sm font-extrabold ' + (tx.amount >= 0 ? 'text-primary' : 'text-destructive')}>
                             {tx.amount >= 0 ? '+' : ''}{money(tx.amount, selectedAccount.currency)}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                            {money(balanceAfter, selectedAccount.currency)}
                           </p>
 
                         </div>
