@@ -22,6 +22,7 @@ import {
   WalletCards,
   X,
 } from 'lucide-react';
+import { supabase } from '@/lib/services/supabase';
 import {
   categoryLabel,
   loadTransactionSettings,
@@ -1261,6 +1262,170 @@ export default function MoneyProPreview() {
   const [screen, setScreen] = useState<Screen>(initialScreen);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
+  const [calendarEvents, setCalendarEvents] = useState<Array<{
+    id: string;
+    day: number;
+    title: string;
+    type: 'income' | 'expense' | 'transfer';
+    category: string;
+    account: string;
+    amount: number;
+    currency: string;
+    status: string;
+    kind: 'transaction' | 'planned' | 'recurring' | 'bills' | 'installments';
+    repeat?: string;
+  }>>([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarConnected, setCalendarConnected] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCalendarData() {
+      setCalendarLoading(true);
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        if (!cancelled) {
+          setCalendarConnected(false);
+          setCalendarLoading(false);
+          setCalendarEvents([]);
+        }
+        return;
+      }
+
+      const start = new Date(2026, 8 + monthOffset, 1);
+      const end = new Date(2026, 9 + monthOffset, 0);
+      const from = start.toISOString().slice(0, 10);
+      const to = end.toISOString().slice(0, 10);
+
+      const [transactionsResult, scheduledResult, recurringResult, installmentsResult, accountsResult] = await Promise.all([
+        supabase
+          .from('transactions')
+          .select('id,type,amount,currency_code,transaction_date,status,description,account_id,categories(name),accounts(name)')
+          .gte('transaction_date', from)
+          .lte('transaction_date', to)
+          .order('transaction_date', { ascending: true }),
+        supabase
+          .from('scheduled_transactions')
+          .select('id,type,amount,currency_code,next_run_date,status,description,account_id,categories(name),accounts(name),recurring_rule_id')
+          .gte('next_run_date', from)
+          .lte('next_run_date', to)
+          .eq('status', 'active')
+          .order('next_run_date', { ascending: true }),
+        supabase
+          .from('recurring_rules')
+          .select('id,name,frequency,next_run_date,status')
+          .lte('next_run_date', to)
+          .in('status', ['active', 'paused'])
+          .order('next_run_date', { ascending: true }),
+        supabase
+          .from('installments')
+          .select('id,name,amount,currency_code,due_date,status,installment_number')
+          .gte('due_date', from)
+          .lte('due_date', to)
+          .in('status', ['pending', 'partially_paid', 'overdue'])
+          .order('due_date', { ascending: true }),
+        supabase
+          .from('accounts')
+          .select('id,name,account_type,currency_code,payment_due_date,status')
+          .eq('account_type', 'credit_card')
+          .eq('status', 'active'),
+      ]);
+
+      if (cancelled) return;
+
+      const hasErrors = [transactionsResult.error, scheduledResult.error, recurringResult.error, installmentsResult.error, accountsResult.error].some(Boolean);
+      if (hasErrors) {
+        setCalendarConnected(false);
+        setCalendarEvents([]);
+        setCalendarLoading(false);
+        return;
+      }
+
+      const events: typeof calendarEvents = [];
+      for (const row of transactionsResult.data ?? []) {
+        const account = Array.isArray(row.accounts) ? row.accounts[0] : row.accounts;
+        const category = Array.isArray(row.categories) ? row.categories[0] : row.categories;
+        const day = Number(String(row.transaction_date).slice(8, 10));
+        if (!day) continue;
+        events.push({
+          id: 'tx-' + row.id,
+          day,
+          title: row.description || (row.type === 'income' ? 'Income' : row.type === 'expense' ? 'Expense' : 'Transfer'),
+          type: row.type === 'income' ? 'income' : row.type === 'expense' ? 'expense' : 'transfer',
+          category: category?.name ?? (row.type === 'transfer' ? 'Transfer' : 'Uncategorized'),
+          account: account?.name ?? 'Account',
+          amount: row.type === 'expense' ? -Number(row.amount) : Number(row.amount),
+          currency: row.currency_code,
+          status: row.status,
+          kind: 'transaction',
+        });
+      }
+
+      for (const row of scheduledResult.data ?? []) {
+        const account = Array.isArray(row.accounts) ? row.accounts[0] : row.accounts;
+        const category = Array.isArray(row.categories) ? row.categories[0] : row.categories;
+        const day = Number(String(row.next_run_date).slice(8, 10));
+        if (!day) continue;
+        const type = row.type === 'income' ? 'income' : 'expense';
+        events.push({
+          id: 'scheduled-' + row.id,
+          day,
+          title: row.description || 'Planned Transaction',
+          type,
+          category: category?.name ?? 'Scheduled',
+          account: account?.name ?? 'Account',
+          amount: type === 'expense' ? -Number(row.amount) : Number(row.amount),
+          currency: row.currency_code,
+          status: 'Planned',
+          kind: row.recurring_rule_id ? 'recurring' : 'planned',
+          repeat: row.recurring_rule_id ? 'Recurring' : undefined,
+        });
+      }
+
+      for (const row of installmentsResult.data ?? []) {
+        const day = Number(String(row.due_date).slice(8, 10));
+        if (!day) continue;
+        events.push({
+          id: 'installment-' + row.id,
+          day,
+          title: row.name,
+          type: 'expense',
+          category: 'Installments',
+          account: 'Due payment',
+          amount: -Number(row.amount),
+          currency: row.currency_code,
+          status: row.status === 'overdue' ? 'Overdue' : 'Planned',
+          kind: 'installments',
+          repeat: row.installment_number ? 'Installment ' + row.installment_number : undefined,
+        });
+      }
+
+      const daysInMonth = end.getDate();
+      for (const row of accountsResult.data ?? []) {
+        const dueDay = Number(row.payment_due_date);
+        if (!dueDay || dueDay < 1 || dueDay > daysInMonth) continue;
+        events.push({
+          id: 'cc-due-' + row.id + '-' + from.slice(0, 7),
+          day: dueDay,
+          title: row.name + ' Payment Due',
+          type: 'expense',
+          category: 'Credit Card Due',
+          account: row.name,
+          amount: 0,
+          currency: row.currency_code,
+          status: 'Due',
+          kind: 'bills',
+        });
+      }
+
+      setCalendarConnected(true);
+      setCalendarEvents(events);
+      setCalendarLoading(false);
+    }
+    void loadCalendarData();
+    return () => { cancelled = true; };
+  }, [monthOffset]);
+
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<number | null>(20);
   const [calendarView, setCalendarView] = useState<'all' | 'planned' | 'recurring' | 'bills' | 'installments'>('all');
 
@@ -1469,19 +1634,25 @@ export default function MoneyProPreview() {
                     return day > 0 && day <= daysInMonth ? day : null;
                   });
 
-                  const scheduledRows = [
-                    { id: 'planned-salary', day: 25, title: 'Salary', type: 'income' as const, category: 'Salary', account: 'CIB', amount: 32000, currency: 'EGP', status: 'Planned', kind: 'planned' as const, repeat: 'Monthly' },
-                    { id: 'bill-electricity', day: 27, title: 'Electricity Bill', type: 'expense' as const, category: 'Bills · Electricity', account: 'CIB', amount: -500, currency: 'EGP', status: 'Planned', kind: 'bills' as const, repeat: 'Monthly' },
-                    { id: 'installment-school', day: 15, title: 'School Installment', type: 'expense' as const, category: 'Installments', account: 'CIB', amount: -4200, currency: 'EGP', status: 'Planned', kind: 'installments' as const, repeat: 'Monthly' },
-                    { id: 'recurring-internet', day: 10, title: 'Internet', type: 'expense' as const, category: 'Bills · Internet', account: 'CIB', amount: -600, currency: 'EGP', status: 'Planned', kind: 'recurring' as const, repeat: 'Monthly' },
-                  ];
-
-                  const dateTransactions = transactionRows.filter((row) => {
-                    const match = row.date.match(/(\d{1,2})\s+([A-Za-z]{3})/);
-                    if (!match) return false;
-                    const rowDate = new Date(Date.parse(match[1] + ' ' + match[2] + ' 2026'));
-                    return rowDate.getFullYear() === year && rowDate.getMonth() === month;
+                  const fallbackEvents = transactionRows.map((row, index) => {
+                    const match = row.date.match(/(\d{1,2})\s+/);
+                    return {
+                      id: 'demo-' + index,
+                      day: match ? Number(match[1]) : 1,
+                      title: row.title,
+                      type: row.type === 'income' ? 'income' as const : row.type === 'expense' ? 'expense' as const : 'transfer' as const,
+                      category: row.category,
+                      account: row.account,
+                      amount: row.amount,
+                      currency: accountRows.find((account) => account.name === row.account)?.currency ?? 'EGP',
+                      status: 'completed',
+                      kind: 'transaction' as const,
+                    };
                   });
+                  const allEvents = calendarConnected ? calendarEvents : fallbackEvents;
+                  const dateTransactions = allEvents.filter((row) => row.kind === 'transaction');
+                  const scheduledRows = allEvents.filter((row) => row.kind !== 'transaction');
+
 
                   const visibleScheduledRows = calendarView === 'all'
                     ? scheduledRows
@@ -1530,6 +1701,12 @@ export default function MoneyProPreview() {
                             <p className="mt-1 text-lg font-extrabold">{value === 'all' ? visibleScheduledRows.length : scheduledRows.filter((row) => row.kind === value).length}</p>
                           </button>
                         ))}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {calendarLoading && <span className="text-[10px] font-semibold text-muted-foreground">Loading your calendar data...</span>}
+                        {!calendarLoading && calendarConnected && <span className="text-[10px] font-semibold text-primary">Connected to your Financy data</span>}
+                        {!calendarLoading && !calendarConnected && <span className="text-[10px] font-semibold text-muted-foreground">Demo data · sign in to use your saved data</span>}
                       </div>
 
                       <div className="flex flex-wrap gap-2">
