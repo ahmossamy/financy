@@ -46,6 +46,7 @@ import {
   resetTransactionSettings,
   TRANSACTION_FIELD_LABELS,
   type CategoryItem,
+  type ExpenseItem,
   type TransactionFieldKey,
   type TransactionSettings,
 } from '@/lib/transaction-settings';
@@ -1384,6 +1385,7 @@ const settingsGroups = [
     items: [
       ['Transaction Form', 'Choose which optional transaction fields are visible.'],
       ['Categories', 'Manage separate expense and income category trees.'],
+      ['Expense Items', 'Choose reusable expense items instead of typing item names in transactions.'],
       ['People, Classes & Tags', 'Manage people, classes and tags used by transactions.'],
       ['Payment Methods & Payees', 'Manage payment methods and saved merchants.'],
     ],
@@ -1414,6 +1416,8 @@ function Settings() {
   const [categoryType, setCategoryType] = useState<'expense' | 'income'>('expense');
   const [categoryName, setCategoryName] = useState('');
   const [parentCategoryId, setParentCategoryId] = useState('');
+  const [expenseItemName, setExpenseItemName] = useState('');
+  const [expenseItemCategoryId, setExpenseItemCategoryId] = useState('');
   const [listInputs, setListInputs] = useState({
     people: '',
     classes: '',
@@ -1477,6 +1481,33 @@ function Settings() {
     const list = transactionSettings[key];
     const removeIds = new Set([id, ...list.filter((item) => item.parentId === id).map((item) => item.id)]);
     updateSettings({ ...transactionSettings, [key]: list.filter((item) => !removeIds.has(item.id)) });
+  }
+
+  function addExpenseItem() {
+    const name = expenseItemName.trim();
+    if (!name) return;
+    if (transactionSettings.expenseItems.some((item) => item.name.toLowerCase() === name.toLowerCase())) return;
+
+    const fallbackCategoryId = transactionSettings.expenseCategories.find((item) => !item.parentId)?.id ?? '';
+    const item: ExpenseItem = {
+      id: 'item-' + Date.now(),
+      name,
+      categoryId: expenseItemCategoryId || fallbackCategoryId,
+    };
+
+    updateSettings({
+      ...transactionSettings,
+      expenseItems: [...transactionSettings.expenseItems, item],
+    });
+    setExpenseItemName('');
+    setExpenseItemCategoryId('');
+  }
+
+  function removeExpenseItem(id: string) {
+    updateSettings({
+      ...transactionSettings,
+      expenseItems: transactionSettings.expenseItems.filter((item) => item.id !== id),
+    });
   }
 
   function addListItem(key: 'people' | 'classes' | 'tags' | 'paymentMethods' | 'payees', inputKey: keyof typeof listInputs) {
@@ -1604,6 +1635,53 @@ function Settings() {
             </div>
           )}
 
+          {active === 'Expense Items' && (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-border bg-muted/30 p-4">
+                <p className="text-sm font-bold">Expense Items</p>
+                <p className="mt-1 text-xs text-muted-foreground">Create items once, select them from Expense transactions, and keep the category attached to each item.</p>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                <input
+                  value={expenseItemName}
+                  onChange={(event) => setExpenseItemName(event.target.value)}
+                  placeholder="Item name"
+                  className="h-10 rounded-xl border border-border bg-background px-3 text-sm"
+                />
+                <select
+                  value={expenseItemCategoryId}
+                  onChange={(event) => setExpenseItemCategoryId(event.target.value)}
+                  className="h-10 rounded-xl border border-border bg-background px-3 text-sm"
+                >
+                  <option value="">Choose category</option>
+                  {transactionSettings.expenseCategories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.parentId ? (transactionSettings.expenseCategories.find((parent) => parent.id === category.parentId)?.name || '') + ' > ' : ''}{category.name}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" onClick={addExpenseItem} className="h-10 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground">Add</button>
+              </div>
+
+              <div className="space-y-2">
+                {transactionSettings.expenseItems.map((item) => {
+                  const category = transactionSettings.expenseCategories.find((entry) => entry.id === item.categoryId);
+                  const parent = category?.parentId ? transactionSettings.expenseCategories.find((entry) => entry.id === category.parentId) : null;
+                  return (
+                    <div key={item.id} className="flex items-center justify-between rounded-xl border border-border px-4 py-3">
+                      <div>
+                        <p className="text-sm font-semibold">{item.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{parent ? parent.name + ' > ' : ''}{category?.name ?? 'No category'}</p>
+                      </div>
+                      <button type="button" onClick={() => removeExpenseItem(item.id)} className="text-xs font-bold text-muted-foreground hover:text-destructive">Remove</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {active === 'People, Classes & Tags' && (
             <div className="grid gap-5 lg:grid-cols-3">
               {renderListEditor('people','people','People','Add person')}
@@ -1619,7 +1697,7 @@ function Settings() {
             </div>
           )}
 
-          {!['Appearance','Language','Transaction Form','Categories','People, Classes & Tags','Payment Methods & Payees'].includes(active) && (
+          {!['Appearance','Language','Transaction Form','Categories','Expense Items','People, Classes & Tags','Payment Methods & Payees'].includes(active) && (
             <div className="rounded-xl border border-dashed border-border bg-muted/30 p-5">
               <p className="text-sm font-semibold">This settings section is ready for its module.</p>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">The structure is included now so Financy can keep one consistent settings model as the remaining modules are connected.</p>
