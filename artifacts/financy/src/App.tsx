@@ -1419,6 +1419,10 @@ function Settings() {
   const [expenseItemName, setExpenseItemName] = useState('');
   const [expenseItemMainCategoryId, setExpenseItemMainCategoryId] = useState('');
   const [expenseItemSubcategoryId, setExpenseItemSubcategoryId] = useState('');
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [editingExpenseItemId, setEditingExpenseItemId] = useState<string | null>(null);
+  const [editingExpenseItemName, setEditingExpenseItemName] = useState('');
   const [listInputs, setListInputs] = useState({
     people: '',
     classes: '',
@@ -1477,6 +1481,20 @@ function Settings() {
     setParentCategoryId('');
   }
 
+  function editCategory(id: string, name: string) {
+    const nextName = name.trim();
+    if (!nextName) return;
+    const key = categoryType === 'expense' ? 'expenseCategories' : 'incomeCategories';
+    const list = transactionSettings[key];
+    if (list.some((item) => item.id !== id && item.name.toLowerCase() === nextName.toLowerCase())) return;
+    updateSettings({
+      ...transactionSettings,
+      [key]: list.map((item) => item.id === id ? { ...item, name: nextName } : item),
+    });
+    setEditingCategoryId(null);
+    setEditingCategoryName('');
+  }
+
   function removeCategory(id: string) {
     const key = categoryType === 'expense' ? 'expenseCategories' : 'incomeCategories';
     const list = transactionSettings[key];
@@ -1504,6 +1522,18 @@ function Settings() {
     setExpenseItemName('');
     setExpenseItemMainCategoryId('');
     setExpenseItemSubcategoryId('');
+  }
+
+  function editExpenseItem(id: string, name: string) {
+    const nextName = name.trim();
+    if (!nextName) return;
+    if (transactionSettings.expenseItems.some((item) => item.id !== id && item.name.toLowerCase() === nextName.toLowerCase())) return;
+    updateSettings({
+      ...transactionSettings,
+      expenseItems: transactionSettings.expenseItems.map((item) => item.id === id ? { ...item, name: nextName } : item),
+    });
+    setEditingExpenseItemId(null);
+    setEditingExpenseItemName('');
   }
 
   function removeExpenseItem(id: string) {
@@ -1627,15 +1657,71 @@ function Settings() {
                 <select value={parentCategoryId} onChange={(event) => setParentCategoryId(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-sm"><option value="">Top level</option>{topLevelCategories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
                 <button type="button" onClick={addCategory} className="h-10 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground">Add</button>
               </div>
-              <div className="space-y-2">
-                {activeCategories.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between rounded-xl border border-border px-4 py-3">
-                    <div><p className="text-sm font-semibold">{item.parentId ? (activeCategories.find((parent) => parent.id === item.parentId)?.name ?? '') + ' > ' : ''}{item.name}</p><p className="text-[10px] text-muted-foreground">{item.parentId ? 'Subcategory' : 'Category'}</p></div>
-                    <button type="button" onClick={() => removeCategory(item.id)} className="text-xs font-bold text-muted-foreground hover:text-destructive">Remove</button>
-                  </div>
-                ))}
-              </div>
-            </div>
+              <div className="overflow-hidden rounded-2xl border border-border">
+                {topLevelCategories.map((mainCategory) => {
+                  const branches = activeCategories.filter((item) => item.parentId === mainCategory.id);
+                  const mainEditing = editingCategoryId === mainCategory.id;
+                  return (
+                    <div key={mainCategory.id} className="border-b border-border last:border-b-0">
+                      <div className="flex items-center justify-between gap-3 bg-muted/30 px-4 py-3">
+                        <div className="min-w-0 flex-1">
+                          {mainEditing ? (
+                            <input autoFocus value={editingCategoryName} onChange={(event) => setEditingCategoryName(event.target.value)} className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm font-semibold" />
+                          ) : (
+                            <p className="text-sm font-extrabold">{mainCategory.name}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {mainEditing ? (
+                            <>
+                              <button type="button" onClick={() => editCategory(mainCategory.id, editingCategoryName)} className="text-xs font-bold text-primary">Save</button>
+                              <button type="button" onClick={() => setEditingCategoryId(null)} className="text-xs font-bold text-muted-foreground">Cancel</button>
+                            </>
+                          ) : (
+                            <>
+                              <button type="button" onClick={() => { setEditingCategoryId(mainCategory.id); setEditingCategoryName(mainCategory.name); }} className="text-xs font-bold text-muted-foreground hover:text-foreground">Edit</button>
+                              <button type="button" onClick={() => removeCategory(mainCategory.id)} className="text-xs font-bold text-muted-foreground hover:text-destructive">Remove</button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {branches.map((branch) => {
+                        const editing = editingCategoryId === branch.id;
+                        return (
+                          <div key={branch.id} className="flex items-center justify-between gap-3 border-t border-border px-6 py-2.5">
+                            <div className="min-w-0 flex-1">
+                              <span className="mr-2 text-muted-foreground">└</span>
+                              {editing ? (
+                                <input autoFocus value={editingCategoryName} onChange={(event) => setEditingCategoryName(event.target.value)} className="h-8 w-full rounded-lg border border-border bg-background px-2 text-xs" />
+                              ) : (
+                                <span className="text-xs font-semibold">{branch.name}</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {editing ? (
+                                <>
+                                  <button type="button" onClick={() => editCategory(branch.id, editingCategoryName)} className="text-[10px] font-bold text-primary">Save</button>
+                                  <button type="button" onClick={() => setEditingCategoryId(null)} className="text-[10px] font-bold text-muted-foreground">Cancel</button>
+                                </>
+                              ) : (
+                                <>
+                                  <button type="button" onClick={() => { setEditingCategoryId(branch.id); setEditingCategoryName(branch.name); }} className="text-[10px] font-bold text-muted-foreground hover:text-foreground">Edit</button>
+                                  <button type="button" onClick={() => removeCategory(branch.id)} className="text-[10px] font-bold text-muted-foreground hover:text-destructive">Remove</button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {!branches.length && (
+                        <div className="px-6 py-3 text-[10px] text-muted-foreground">No branches yet</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>            </div>
           )}
 
           {active === 'Expense Items' && (
@@ -1687,10 +1773,7 @@ function Settings() {
 
               <div className="overflow-hidden rounded-2xl border border-border">
                 <div className="hidden grid-cols-[1.2fr_1fr_1fr_auto] border-b border-border bg-muted/40 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground sm:grid">
-                  <span>Item</span>
-                  <span>Main Category</span>
-                  <span>Branch</span>
-                  <span />
+                  <span>Item</span><span>Main category</span><span>Branch</span><span />
                 </div>
                 <div className="divide-y divide-border">
                   {transactionSettings.expenseItems.map((item) => {
@@ -1699,19 +1782,36 @@ function Settings() {
                       ? transactionSettings.expenseCategories.find((entry) => entry.id === category.parentId)
                       : category;
                     const branch = category?.parentId ? category : null;
-
+                    const editing = editingExpenseItemId === item.id;
                     return (
                       <div key={item.id} className="grid gap-2 px-4 py-3 sm:grid-cols-[1.2fr_1fr_1fr_auto] sm:items-center">
-                        <span className="text-sm font-semibold">{item.name}</span>
+                        <div>
+                          {editing ? (
+                            <input autoFocus value={editingExpenseItemName} onChange={(event) => setEditingExpenseItemName(event.target.value)} className="h-9 w-full rounded-lg border border-border bg-background px-2 text-xs" />
+                          ) : (
+                            <span className="text-sm font-semibold">{item.name}</span>
+                          )}
+                        </div>
                         <span className="text-xs">{parent?.name ?? '—'}</span>
                         <span className="text-xs text-muted-foreground">{branch?.name ?? '—'}</span>
-                        <button type="button" onClick={() => removeExpenseItem(item.id)} className="text-left text-xs font-bold text-muted-foreground hover:text-destructive sm:text-right">Remove</button>
+                        <div className="flex items-center gap-2">
+                          {editing ? (
+                            <>
+                              <button type="button" onClick={() => editExpenseItem(item.id, editingExpenseItemName)} className="text-[10px] font-bold text-primary">Save</button>
+                              <button type="button" onClick={() => setEditingExpenseItemId(null)} className="text-[10px] font-bold text-muted-foreground">Cancel</button>
+                            </>
+                          ) : (
+                            <>
+                              <button type="button" onClick={() => { setEditingExpenseItemId(item.id); setEditingExpenseItemName(item.name); }} className="text-[10px] font-bold text-muted-foreground hover:text-foreground">Edit</button>
+                              <button type="button" onClick={() => removeExpenseItem(item.id)} className="text-[10px] font-bold text-muted-foreground hover:text-destructive">Remove</button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
-              </div>
-            </div>
+              </div>            </div>
           )}
 
           {active === 'People, Classes & Tags' && (
