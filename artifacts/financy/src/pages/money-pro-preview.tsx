@@ -152,6 +152,7 @@ function TransactionsPreview() {
   const [newCategory, setNewCategory] = useState('');
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
 
   const accounts = Array.from(new Set(rows.map((row) => row.account)));
   const classes = Array.from(new Set(rows.map((row) => row.className ?? 'Personal')));
@@ -209,6 +210,7 @@ function TransactionsPreview() {
     setAttachments([]);
     setShowCategoryManager(false);
     setShowAdvanced(false);
+    setShowDetails(false);
     setNewCategory('');
   }
 
@@ -446,26 +448,22 @@ function TransactionsPreview() {
       )}
 
       {showAdd && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-foreground/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="flex max-h-[96vh] w-full max-w-xl flex-col overflow-hidden rounded-t-[2rem] border border-border bg-background shadow-2xl sm:rounded-[2rem]">
-            <div className="flex shrink-0 items-center justify-between border-b border-border bg-card px-4 py-4 sm:px-6">
-              <button type="button" onClick={() => setShowAdd(false)} className="grid size-11 place-items-center rounded-full bg-muted hover:bg-muted/70" aria-label="Close">
-                <X className="size-6" />
-              </button>
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/45 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="flex max-h-[96vh] w-full max-w-md flex-col overflow-hidden rounded-t-[2rem] border border-border bg-[#224f55] text-white shadow-2xl sm:rounded-[2rem]">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center border-b border-white/15 px-4 py-3 sm:px-5">
+              <button type="button" onClick={() => setShowAdd(false)} className="justify-self-start text-sm font-medium text-white/80 hover:text-white">Cancel</button>
               <div className="text-center">
-                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-primary">Checkbook</p>
-                <h3 className="mt-1 font-display text-xl font-extrabold">
-                  {entryMode === 'expense' ? 'Expense' : entryMode === 'income' ? 'Income' : entryMode === 'transfer' ? 'Transfer' : 'Planned'}
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/55">Checkbook</p>
+                <h3 className="mt-0.5 text-lg font-extrabold">
+                  {entryMode === 'expense' ? 'Expense' : entryMode === 'income' ? 'Income' : entryMode === 'transfer' ? 'Money Transfer' : 'Planned'}
                 </h3>
               </div>
-              <button type="submit" form="transaction-form" className="grid size-11 place-items-center rounded-full bg-primary text-primary-foreground shadow-sm" aria-label="Save transaction">
-                <span className="text-2xl leading-none">✓</span>
-              </button>
+              <button type="submit" form="transaction-form" className="justify-self-end text-sm font-bold text-white/80 hover:text-white">Save</button>
             </div>
 
             <form id="transaction-form" onSubmit={addTransaction} className="min-h-0 overflow-y-auto">
-              <div className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
-                <div className="grid grid-cols-4 overflow-hidden rounded-2xl border border-border bg-muted/40">
+              <div className="border-b border-white/10 px-3 py-2">
+                <div className="grid grid-cols-4 rounded-xl bg-black/10 p-1">
                   {[
                     ['expense', 'Expense'],
                     ['income', 'Income'],
@@ -476,8 +474,8 @@ function TransactionsPreview() {
                       key={value}
                       type="button"
                       onClick={() => setEntryMode(value as EntryMode)}
-                      className={'px-2 py-3 text-xs font-bold transition-colors ' + (
-                        entryMode === value ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                      className={'rounded-lg px-2 py-2 text-[11px] font-bold transition-colors ' + (
+                        entryMode === value ? 'bg-white/10 text-white' : 'text-white/55 hover:text-white'
                       )}
                     >
                       {label}
@@ -486,114 +484,59 @@ function TransactionsPreview() {
                 </div>
               </div>
 
-              <div className="space-y-3 p-4 sm:p-6">
+              <div className="px-4 py-3">
                 {entryMode === 'expense' && (
-                  <>
-                    <div className="overflow-hidden rounded-3xl border border-border bg-card">
-                      <div className="flex items-center justify-between border-b border-border px-5 py-4">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Paid from</p>
-                          <p className="mt-1 text-sm font-extrabold">Choose account</p>
-                        </div>
-                        <select name="account" className="max-w-[56%] rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold">
-                          {accountRows.filter((account) => account.type !== 'Credit card' || account.balance < 0).map((account) => (
-                            <option key={account.name}>{account.name}</option>
-                          ))}
-                        </select>
+                  <div className="overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
+                    <div className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-white/55">Paid from</p>
+                        <p className="mt-1 truncate text-sm font-semibold">{accountRows[0]?.name ?? 'Account'}</p>
                       </div>
-                      <div className="flex items-center justify-between gap-4 px-5 py-5">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Total expense</p>
-                          <p className="mt-1 text-3xl font-extrabold">EGP</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-4xl font-extrabold tracking-tight">{money(itemTotal)}</p>
-                          <input type="hidden" name="amount" value={itemTotal} />
-                        </div>
-                      </div>
+                      <select name="account" defaultValue={accountRows[0]?.name} className="max-w-[52%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none">
+                        {accountRows.map((account) => <option key={account.name} className="text-black">{account.name}</option>)}
+                      </select>
                     </div>
-
-                    <div className="overflow-hidden rounded-3xl border border-border bg-card">
-                      <div className="flex items-center justify-between border-b border-border px-5 py-4">
-                        <div>
-                          <p className="font-bold">Items</p>
-                          <p className="text-[11px] text-muted-foreground">Use one item or split the purchase into several items.</p>
-                        </div>
-                        <button type="button" onClick={addLineItem} className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-bold hover:bg-muted">
-                          <Plus className="size-4" /> Add item
-                        </button>
+                    <button type="button" onClick={() => setShowCategoryManager(true)} className="flex min-h-14 w-full items-center justify-between gap-3 border-b border-white/10 px-4 text-left hover:bg-white/[0.03]">
+                      <div>
+                        <p className="text-[10px] text-white/55">Category</p>
+                        <p className="mt-1 text-sm font-semibold">{lineItems.length === 1 ? lineItems[0]?.category : 'Multiple categories'}</p>
                       </div>
-                      <div className="divide-y divide-border">
-                        {lineItems.map((item, index) => (
-                          <div key={item.id} className="space-y-3 p-4">
-                            <div className="flex items-center gap-2">
-                              <input
-                                value={item.name}
-                                onChange={(event) => updateLineItem(item.id, { name: event.target.value })}
-                                placeholder={'Item ' + (index + 1) + ' name'}
-                                className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-3 text-sm"
-                              />
-                              {lineItems.length > 1 && (
-                                <button type="button" onClick={() => removeLineItem(item.id)} className="grid size-10 place-items-center rounded-xl border border-border text-muted-foreground hover:text-destructive" aria-label="Remove item">
-                                  ×
-                                </button>
-                              )}
-                            </div>
-                            <div className="grid gap-2 sm:grid-cols-[1fr_125px]">
-                              <div className="flex gap-2">
-                                <select value={item.category} onChange={(event) => updateLineItem(item.id, { category: event.target.value })} className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-3 text-sm">
-                                  {categories.map((category) => <option key={category}>{category}</option>)}
-                                </select>
-                                <button type="button" onClick={() => setShowCategoryManager(true)} className="h-11 rounded-xl border border-border px-3 text-xs font-bold hover:bg-muted">
-                                  Categories
-                                </button>
-                              </div>
-                              <input
-                                value={item.amount || ''}
-                                onChange={(event) => updateLineItem(item.id, { amount: Number(event.target.value) || 0 })}
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                placeholder="Amount"
-                                className="h-11 rounded-xl border border-border bg-background px-3 text-right text-sm font-bold"
-                              />
-                            </div>
-                          </div>
-                        ))}
+                      <ChevronRight className="size-4 text-white/45" />
+                    </button>
+                    <div className="flex min-h-16 items-center justify-between gap-3 px-4">
+                      <div>
+                        <p className="text-[10px] text-white/55">Amount</p>
+                        <p className="mt-1 text-xs font-semibold text-white/55">EGP</p>
                       </div>
-                      <div className="flex items-center justify-between border-t border-border bg-muted/30 px-5 py-3">
-                        <span className="text-xs font-semibold text-muted-foreground">Transaction total</span>
-                        <span className="text-sm font-extrabold">{money(amount)}</span>
-                      </div>
+                      <p className="text-3xl font-extrabold tracking-tight">{money(itemTotal)}</p>
                     </div>
-                  </>
+                  </div>
                 )}
 
                 {entryMode === 'income' && (
                   <>
-                    <div className="overflow-hidden rounded-3xl border border-border bg-card">
-                      <div className="flex items-center justify-between border-b border-border px-5 py-4">
-                        <div><p className="text-xs text-muted-foreground">Deposit to</p><p className="mt-1 text-sm font-extrabold">Choose account</p></div>
-                        <select name="account" className="max-w-[56%] rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold">
-                          {accountRows.map((account) => <option key={account.name}>{account.name}</option>)}
+                    <div className="overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
+                      <div className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
+                        <div><p className="text-[10px] text-white/55">Deposit to</p><p className="mt-1 text-sm font-semibold">Account</p></div>
+                        <select name="account" defaultValue={accountRows[0]?.name} className="max-w-[55%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none">
+                          {accountRows.map((account) => <option key={account.name} className="text-black">{account.name}</option>)}
                         </select>
                       </div>
-                      <div className="flex items-center justify-between gap-4 px-5 py-5">
-                        <div><p className="text-xs text-muted-foreground">Income amount</p><p className="mt-1 text-3xl font-extrabold">EGP</p></div>
-                        <input name="amount" type="number" min="0" step="0.01" required placeholder="0.00" className="w-full max-w-[62%] bg-transparent text-right text-4xl font-extrabold outline-none" />
+                      <div className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
+                        <div><p className="text-[10px] text-white/55">Source</p><p className="mt-1 text-sm font-semibold">Income source</p></div>
+                        <input name="payee" placeholder="Salary, client, dividend..." className="max-w-[55%] rounded-lg bg-black/10 px-2 py-2 text-right text-sm outline-none placeholder:text-white/35" />
+                      </div>
+                      <div className="flex min-h-16 items-center justify-between gap-3 px-4">
+                        <div><p className="text-[10px] text-white/55">Category</p><p className="mt-1 text-sm font-semibold">Choose category</p></div>
+                        <select name="incomeCategory" className="max-w-[55%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none">
+                          {categories.map((category) => <option key={category} className="text-black">{category}</option>)}
+                        </select>
                       </div>
                     </div>
-
-                    <div className="overflow-hidden rounded-3xl border border-border bg-card">
-                      <div className="border-b border-border px-5 py-4">
-                        <p className="font-bold">Income details</p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">Source and category for this income.</p>
-                      </div>
-                      <div className="space-y-3 p-4">
-                        <input name="payee" placeholder="Source: Salary, client, dividend..." className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" />
-                        <select name="incomeCategory" className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm">
-                          {categories.filter((category) => category === 'Salary' || category === 'Investment income' || category === 'Other').map((category) => <option key={category}>{category}</option>)}
-                        </select>
+                    <div className="mt-3 rounded-2xl border border-white/15 bg-white/[0.03] px-4 py-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div><p className="text-[10px] text-white/55">Income amount</p><p className="mt-1 text-xs font-semibold text-white/55">EGP</p></div>
+                        <input name="amount" type="number" min="0" step="0.01" required placeholder="0" className="w-full max-w-[70%] bg-transparent text-right text-4xl font-extrabold tracking-tight outline-none placeholder:text-white/25" />
                       </div>
                     </div>
                   </>
@@ -601,120 +544,151 @@ function TransactionsPreview() {
 
                 {entryMode === 'transfer' && (
                   <>
-                    <div className="overflow-hidden rounded-3xl border border-border bg-card">
-                      <div className="grid divide-y divide-border">
-                        <label className="flex min-h-20 items-center justify-between gap-4 px-5">
-                          <div><p className="text-xs text-muted-foreground">From</p><p className="mt-1 text-sm font-bold">Source account</p></div>
-                          <select name="account" className="max-w-[56%] rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select>
-                        </label>
-                        <label className="flex min-h-20 items-center justify-between gap-4 px-5">
-                          <div><p className="text-xs text-muted-foreground">To</p><p className="mt-1 text-sm font-bold">Destination account</p></div>
-                          <select name="transferTo" className="max-w-[56%] rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select>
-                        </label>
-                      </div>
+                    <div className="overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
+                      <label className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
+                        <div><p className="text-[10px] text-white/55">From</p><p className="mt-1 text-sm font-semibold">Source account</p></div>
+                        <select name="account" defaultValue={accountRows[0]?.name} className="max-w-[55%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name} className="text-black">{account.name}</option>)}</select>
+                      </label>
+                      <label className="flex min-h-16 items-center justify-between gap-3 px-4">
+                        <div><p className="text-[10px] text-white/55">To</p><p className="mt-1 text-sm font-semibold">Destination account</p></div>
+                        <select name="transferTo" defaultValue={accountRows[1]?.name ?? accountRows[0]?.name} className="max-w-[55%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name} className="text-black">{account.name}</option>)}</select>
+                      </label>
                     </div>
-
-                    <div className="overflow-hidden rounded-3xl border border-border bg-card">
-                      <div className="grid gap-3 p-4 sm:grid-cols-2">
-                        <label className="block"><span className="mb-2 block text-xs font-bold">Send amount</span><input name="amount" type="number" min="0" step="0.01" required placeholder="0.00" className="h-12 w-full rounded-xl border border-border bg-background px-3 text-right text-lg font-extrabold" /></label>
-                        <label className="block"><span className="mb-2 block text-xs font-bold">Transfer fee</span><input name="fee" type="number" min="0" step="0.01" defaultValue="0" className="h-12 w-full rounded-xl border border-border bg-background px-3 text-right text-lg font-extrabold" /></label>
-                        <label className="block"><span className="mb-2 block text-xs font-bold">Exchange rate</span><input name="exchangeRate" type="number" min="0.000001" step="0.000001" defaultValue="1" className="h-12 w-full rounded-xl border border-border bg-background px-3 text-right text-sm font-bold" /></label>
-                        <label className="block"><span className="mb-2 block text-xs font-bold">Received amount</span><input name="receivedAmount" type="number" min="0" step="0.01" placeholder="Same as send" className="h-12 w-full rounded-xl border border-border bg-background px-3 text-right text-sm font-bold" /></label>
-                      </div>
+                    <div className="mt-3 overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
+                      <label className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
+                        <span className="text-sm font-semibold">Send amount</span>
+                        <input name="amount" type="number" min="0" step="0.01" required placeholder="0.00" className="max-w-[62%] bg-transparent text-right text-3xl font-extrabold outline-none placeholder:text-white/25" />
+                      </label>
+                      <label className="flex min-h-14 items-center justify-between gap-3 border-b border-white/10 px-4">
+                        <span className="text-sm text-white/75">Fee</span>
+                        <input name="fee" type="number" min="0" step="0.01" defaultValue="0" className="max-w-[50%] bg-transparent text-right text-lg font-bold outline-none" />
+                      </label>
+                      <label className="flex min-h-14 items-center justify-between gap-3 border-b border-white/10 px-4">
+                        <span className="text-sm text-white/75">Exchange rate</span>
+                        <input name="exchangeRate" type="number" min="0.000001" step="0.000001" defaultValue="1" className="max-w-[50%] bg-transparent text-right text-sm font-bold outline-none" />
+                      </label>
+                      <label className="flex min-h-14 items-center justify-between gap-3 px-4">
+                        <span className="text-sm text-white/75">Received amount</span>
+                        <input name="receivedAmount" type="number" min="0" step="0.01" placeholder="Same as send" className="max-w-[50%] bg-transparent text-right text-sm font-bold outline-none placeholder:text-white/25" />
+                      </label>
                     </div>
                   </>
                 )}
 
                 {entryMode === 'planned' && (
-                  <div className="overflow-hidden rounded-3xl border border-border bg-card">
-                    <div className="border-b border-border px-5 py-4">
-                      <p className="font-bold">Planned transaction</p>
-                      <p className="mt-1 text-[11px] text-muted-foreground">It stays outside actual balances until it is paid or received.</p>
+                  <div className="overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
+                    <label className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
+                      <div><p className="text-[10px] text-white/55">Type</p><p className="mt-1 text-sm font-semibold">Planned expense</p></div>
+                      <select name="plannedType" className="max-w-[55%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none"><option value="expense" className="text-black">Planned expense</option><option value="income" className="text-black">Planned income</option></select>
+                    </label>
+                    <label className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
+                      <div><p className="text-[10px] text-white/55">Account</p><p className="mt-1 text-sm font-semibold">Choose account</p></div>
+                      <select name="account" className="max-w-[55%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name} className="text-black">{account.name}</option>)}</select>
+                    </label>
+                    <label className="flex min-h-16 items-center justify-between gap-3 border-b border-white/10 px-4">
+                      <div><p className="text-[10px] text-white/55">Category</p><p className="mt-1 text-sm font-semibold">Choose category</p></div>
+                      <select name="plannedCategory" className="max-w-[55%] bg-transparent px-1 py-2 text-right text-sm font-bold outline-none">{categories.map((category) => <option key={category} className="text-black">{category}</option>)}</select>
+                    </label>
+                    <label className="flex min-h-16 items-center justify-between gap-3 px-4">
+                      <div><p className="text-[10px] text-white/55">Amount</p><p className="mt-1 text-xs font-semibold text-white/55">EGP</p></div>
+                      <input name="amount" type="number" min="0" step="0.01" required placeholder="0" className="max-w-[62%] bg-transparent text-right text-3xl font-extrabold outline-none placeholder:text-white/25" />
+                    </label>
+                  </div>
+                )}
+
+                {entryMode === 'expense' && lineItems.length > 1 && (
+                  <div className="mt-3 overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
+                    <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                      <div><p className="text-sm font-bold">Items</p><p className="text-[10px] text-white/50">Multiple purchases in one transaction</p></div>
+                      <button type="button" onClick={addLineItem} className="grid size-9 place-items-center rounded-full bg-white/10 hover:bg-white/15"><Plus className="size-4" /></button>
                     </div>
-                    <div className="grid gap-3 p-4 sm:grid-cols-2">
-                      <label className="block sm:col-span-2"><span className="mb-2 block text-xs font-bold">Type</span><select name="plannedType" className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"><option value="expense">Planned expense</option><option value="income">Planned income</option></select></label>
-                      <label className="block"><span className="mb-2 block text-xs font-bold">Account</span><select name="account" className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select></label>
-                      <label className="block"><span className="mb-2 block text-xs font-bold">Category</span><select name="plannedCategory" className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm">{categories.map((category) => <option key={category}>{category}</option>)}</select></label>
-                      <label className="block"><span className="mb-2 block text-xs font-bold">Amount</span><input name="amount" type="number" min="0" step="0.01" required placeholder="0.00" className="h-11 w-full rounded-xl border border-border bg-background px-3 text-right text-lg font-extrabold" /></label>
+                    <div className="divide-y divide-white/10">
+                      {lineItems.map((item, index) => (
+                        <div key={item.id} className="space-y-2 p-3">
+                          <div className="flex gap-2">
+                            <input value={item.name} onChange={(event) => updateLineItem(item.id, { name: event.target.value })} placeholder={'Item ' + (index + 1)} className="min-w-0 flex-1 rounded-lg bg-black/10 px-3 py-2 text-sm outline-none placeholder:text-white/30" />
+                            <input value={item.amount || ''} onChange={(event) => updateLineItem(item.id, { amount: Number(event.target.value) || 0 })} type="number" min="0" step="0.01" placeholder="Amount" className="w-28 rounded-lg bg-black/10 px-2 py-2 text-right text-sm font-bold outline-none placeholder:text-white/30" />
+                          </div>
+                          <select value={item.category} onChange={(event) => updateLineItem(item.id, { category: event.target.value })} className="w-full rounded-lg bg-black/10 px-3 py-2 text-sm outline-none">{categories.map((category) => <option key={category} className="text-black">{category}</option>)}</select>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
 
-                <div className="overflow-hidden rounded-3xl border border-border bg-card">
-                  <label className="flex cursor-pointer items-center gap-4 px-5 py-4">
-                    <div className="grid size-11 place-items-center rounded-2xl bg-muted"><FileText className="size-5" /></div>
+                {entryMode === 'expense' && (
+                  <div className="mt-3">
+                    {lineItems.length === 1 ? (
+                      <button type="button" onClick={addLineItem} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/20 px-4 py-3 text-xs font-bold text-white/70 hover:bg-white/[0.03]">
+                        <Plus className="size-4" /> Add another item
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+
+                <div className="mt-3 overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
+                  <label className="flex min-h-16 cursor-pointer items-center gap-3 px-4">
+                    <div className="grid size-10 place-items-center rounded-xl bg-white/10"><FileText className="size-4" /></div>
                     <div className="min-w-0 flex-1">
-                      <p className="font-bold">Receipt or attachment</p>
-                      <p className="text-[11px] text-muted-foreground">Add a photo, PDF or file.</p>
+                      <p className="text-sm font-bold">Receipt / attachment</p>
+                      <p className="text-[10px] text-white/50">Photo, PDF or file</p>
                     </div>
-                    <span className="rounded-xl border border-border px-3 py-2 text-xs font-bold">Add</span>
+                    <span className="rounded-lg border border-white/15 px-3 py-2 text-[10px] font-bold">Add</span>
                     <input type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={handleAttachments} className="hidden" />
                   </label>
                   {!!attachments.length && (
-                    <div className="border-t border-border px-5 py-3">
+                    <div className="border-t border-white/10 px-4 py-2">
                       {attachments.map((file) => (
-                        <div key={file.name} className="flex items-center justify-between gap-3 py-1.5 text-xs">
-                          <span className="min-w-0 truncate font-semibold">{file.name}</span>
-                          <button type="button" onClick={() => setAttachments((items) => items.filter((item) => item.name !== file.name))} className="shrink-0 text-muted-foreground hover:text-destructive">Remove</button>
+                        <div key={file.name} className="flex items-center justify-between gap-2 py-1 text-[10px]">
+                          <span className="min-w-0 truncate font-semibold text-white/80">{file.name}</span>
+                          <button type="button" onClick={() => setAttachments((items) => items.filter((item) => item.name !== file.name))} className="shrink-0 text-white/55 hover:text-white">Remove</button>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
 
-                <div className="overflow-hidden rounded-3xl border border-border bg-card">
-                  <button type="button" onClick={() => setShowAdvanced((value) => !value)} className="flex w-full items-center justify-between px-5 py-4 text-left">
-                    <div><p className="font-bold">More details</p><p className="mt-1 text-[11px] text-muted-foreground">Date, status, repeat and notes</p></div>
-                    <ChevronRight className={'size-5 transition-transform ' + (showAdvanced ? 'rotate-90' : '')} />
-                  </button>
-                  {showAdvanced && (
-                    <div className="grid gap-3 border-t border-border p-4 sm:grid-cols-2">
-                      <label className="block"><span className="mb-2 block text-xs font-bold">Date</span><input name="date" required type="date" defaultValue="2026-09-20" className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" /></label>
-                      <label className="block"><span className="mb-2 block text-xs font-bold">Status</span><select name="status" disabled={entryMode === 'planned'} defaultValue="cleared" className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"><option value="cleared">Cleared</option><option value="not-cleared">Not cleared</option></select></label>
-                      <label className="block"><span className="mb-2 block text-xs font-bold">Class</span><select name="className" defaultValue="Personal" className="h-11 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"><option>Personal</option><option>Business</option><option>Travel</option></select></label>
-                      <label className="block"><span className="mb-2 block text-xs font-bold">Check #</span><input name="checkNumber" className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" /></label>
-                      <label className="flex items-center gap-3 rounded-2xl border border-border px-4 py-3 text-sm font-semibold sm:col-span-2">
-                        <input name="recurring" type="checkbox" /> Repeat this transaction
-                      </label>
-                      <label className="block sm:col-span-2"><span className="mb-2 block text-xs font-bold">Notes</span><textarea name="description" rows={3} className="w-full rounded-xl border border-border bg-background px-3 py-3 text-sm" placeholder="Add a note..." /></label>
-                    </div>
-                  )}
+                <div className="mt-3 grid grid-cols-5 overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
+                  {[
+                    ['Details', ''],
+                    ['Attachment', ''],
+                    ['Check #', ''],
+                    ['Person', ''],
+                    ['Class', ''],
+                  ].map(([label]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setShowDetails((value) => !value)}
+                      className="flex min-h-14 items-center justify-center border-r border-white/10 px-1 text-center text-[9px] font-semibold text-white/70 last:border-r-0 hover:bg-white/[0.04]"
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
 
-                <div className="pt-1">
-                  <button type="submit" className="h-12 w-full rounded-2xl bg-primary text-sm font-bold text-primary-foreground shadow-sm">
-                    Save {entryMode === 'expense' ? 'expense' : entryMode === 'income' ? 'income' : entryMode === 'transfer' ? 'transfer' : 'planned transaction'}
-                  </button>
-                </div>
+                {showDetails && (
+                  <div className="mt-3 overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
+                    <div className="space-y-3 p-4">
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold text-white/55">Date</span><input name="date" required type="date" defaultValue="2026-09-20" className="h-10 w-full rounded-xl bg-black/10 px-3 text-sm outline-none" /></label>
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold text-white/55">Status</span><select name="status" disabled={entryMode === 'planned'} defaultValue="cleared" className="h-10 w-full rounded-xl bg-black/10 px-3 text-sm outline-none"><option value="cleared" className="text-black">Cleared</option><option value="not-cleared" className="text-black">Not cleared</option></select></label>
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold text-white/55">Payment method</span><input name="method" placeholder="Cash, card, bank transfer..." className="h-10 w-full rounded-xl bg-black/10 px-3 text-sm outline-none placeholder:text-white/30" /></label>
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold text-white/55">Class</span><select name="className" defaultValue="Personal" className="h-10 w-full rounded-xl bg-black/10 px-3 text-sm outline-none"><option className="text-black">Personal</option><option className="text-black">Business</option><option className="text-black">Travel</option></select></label>
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold text-white/55">Check #</span><input name="checkNumber" className="h-10 w-full rounded-xl bg-black/10 px-3 text-sm outline-none" /></label>
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold text-white/55">Notes</span><textarea name="description" rows={3} className="w-full rounded-xl bg-black/10 px-3 py-2 text-sm outline-none placeholder:text-white/30" placeholder="Add a note..." /></label>
+                      <label className="flex items-center gap-3 rounded-xl bg-black/10 px-3 py-3 text-sm font-semibold"><input name="recurring" type="checkbox" /> Repeat transaction</label>
+                    </div>
+                  </div>
+                )}
+
+                {entryMode === 'expense' && lineItems.length === 1 && (
+                  <div className="mt-3 flex items-center justify-between rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
+                    <span className="text-[10px] text-white/50">Tip</span>
+                    <span className="text-[10px] font-semibold text-white/65">Add another item to split one receipt into several purchases.</span>
+                  </div>
+                )}
               </div>
             </form>
-
-            {showCategoryManager && (
-              <div className="fixed inset-0 z-[90] flex items-end justify-center bg-foreground/40 p-3 sm:items-center">
-                <div className="w-full max-w-md rounded-3xl border border-border bg-card p-5 shadow-2xl">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-display text-lg font-extrabold">My categories</p>
-                      <p className="text-xs text-muted-foreground">Create your categories the way you want them.</p>
-                    </div>
-                    <button type="button" onClick={() => setShowCategoryManager(false)} className="grid size-9 place-items-center rounded-xl hover:bg-muted"><X className="size-5" /></button>
-                  </div>
-                  <div className="mt-4 flex gap-2">
-                    <input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addCategory(); } }} placeholder="New category" className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-3 text-sm" />
-                    <button type="button" onClick={addCategory} className="h-11 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground">Add</button>
-                  </div>
-                  <div className="mt-4 max-h-56 overflow-y-auto">
-                    <div className="flex flex-wrap gap-2">
-                      {categories.map((category) => (
-                        <button type="button" key={category} onClick={() => setCategories((items) => items.filter((item) => item !== category))} className="rounded-full border border-border px-3 py-2 text-xs font-semibold hover:border-destructive hover:text-destructive">
-                          {category} ×
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
