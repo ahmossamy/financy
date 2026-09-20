@@ -93,9 +93,30 @@ type TransactionRecord = {
   checkNumber?: string;
   status: 'cleared' | 'not-cleared' | 'planned';
   recurring?: boolean;
+  items?: Array<{ id: string; name: string; category: string; amount: number }>;
+  attachments?: Array<{ name: string; type: string }>;
+  method?: string;
+  fee?: number;
 };
 
 function TransactionsPreview() {
+  type EntryMode = 'expense' | 'income' | 'transfer' | 'planned';
+  type LineItem = { id: string; name: string; category: string; amount: number };
+  type Attachment = { name: string; type: string };
+
+  const defaultCategories = [
+    'Food & Dining',
+    'Bills',
+    'Transport',
+    'Education',
+    'Shopping',
+    'Health',
+    'Entertainment',
+    'Salary',
+    'Investment income',
+    'Other',
+  ];
+
   const [rows, setRows] = useState<TransactionRecord[]>(() =>
     transactionRows.map((row, index) => ({
       ...row,
@@ -105,6 +126,7 @@ function TransactionsPreview() {
       className: 'Personal',
     })),
   );
+  const [categories, setCategories] = useState(defaultCategories);
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
   const [accountFilter, setAccountFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -117,10 +139,15 @@ function TransactionsPreview() {
   const [showFilters, setShowFilters] = useState(false);
   const [selected, setSelected] = useState<TransactionRecord | null>(null);
   const [showAdd, setShowAdd] = useState(false);
-  const [entryMode, setEntryMode] = useState<'expense' | 'income' | 'transfer' | 'planned'>('expense');
+  const [entryMode, setEntryMode] = useState<EntryMode>('expense');
+  const [lineItems, setLineItems] = useState<LineItem[]>([
+    { id: 'item-1', name: '', category: 'Food & Dining', amount: 0 },
+  ]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [newCategory, setNewCategory] = useState('');
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
 
   const accounts = Array.from(new Set(rows.map((row) => row.account)));
-  const categories = Array.from(new Set(rows.map((row) => row.category)));
   const classes = Array.from(new Set(rows.map((row) => row.className ?? 'Personal')));
 
   function transactionDate(value: string) {
@@ -129,27 +156,27 @@ function TransactionsPreview() {
 
   const filtered = useMemo(() => {
     const now = new Date(2026, 8, 20);
-    let start = new Date(now.getFullYear(), now.getMonth(), 1);
-    let end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    let startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    let endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
     if (period === 'last-month') {
-      start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+      startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
     } else if (period === '30-days') {
-      start = new Date(now);
-      start.setDate(start.getDate() - 29);
-      start.setHours(0, 0, 0, 0);
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 29);
+      startDate.setHours(0, 0, 0, 0);
     } else if (period === 'custom') {
-      if (fromDate) start = new Date(fromDate + 'T00:00:00');
-      if (toDate) end = new Date(toDate + 'T23:59:59');
+      if (fromDate) startDate = new Date(fromDate + 'T00:00:00');
+      if (toDate) endDate = new Date(toDate + 'T23:59:59');
     }
 
     return rows.filter((row) => {
       const date = transactionDate(row.date);
       const text = [row.title, row.account, row.category, row.payee, row.description, row.checkNumber].join(' ').toLowerCase();
       return (
-        date >= start &&
-        date <= end &&
+        date >= startDate &&
+        date <= endDate &&
         (typeFilter === 'all' || row.type === typeFilter) &&
         (accountFilter === 'all' || row.account === accountFilter) &&
         (categoryFilter === 'all' || row.category === categoryFilter) &&
@@ -170,19 +197,74 @@ function TransactionsPreview() {
     { income: 0, expenses: 0 },
   );
 
+  function resetAddForm() {
+    setEntryMode('expense');
+    setLineItems([{ id: 'item-' + Date.now(), name: '', category: categories[0] ?? 'Other', amount: 0 }]);
+    setAttachments([]);
+    setShowCategoryManager(false);
+    setNewCategory('');
+  }
+
+  function openAdd() {
+    resetAddForm();
+    setShowAdd(true);
+  }
+
+  function addLineItem() {
+    setLineItems((items) => [
+      ...items,
+      {
+        id: 'item-' + Date.now() + '-' + items.length,
+        name: '',
+        category: categories[0] ?? 'Other',
+        amount: 0,
+      },
+    ]);
+  }
+
+  function updateLineItem(id: string, patch: Partial<LineItem>) {
+    setLineItems((items) => items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }
+
+  function removeLineItem(id: string) {
+    setLineItems((items) => items.length === 1 ? items : items.filter((item) => item.id !== id));
+  }
+
+  function addCategory() {
+    const value = newCategory.trim();
+    if (!value || categories.some((category) => category.toLowerCase() === value.toLowerCase())) return;
+    setCategories((items) => [...items, value]);
+    setLineItems((items) => items.map((item, index) => index === items.length - 1 && !item.name ? { ...item, category: value } : item));
+    setNewCategory('');
+  }
+
+  function handleAttachments(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    setAttachments((items) => [
+      ...items,
+      ...files.map((file) => ({ name: file.name, type: file.type })),
+    ]);
+    event.currentTarget.value = '';
+  }
+
   function addTransaction(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const selectedMode = String(form.get('entryMode') || 'expense') as 'expense' | 'income' | 'transfer' | 'planned';
+    const amount = lineItems.reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0);
+    if (amount <= 0) return;
+
+    const selectedMode = entryMode;
     const plannedType = String(form.get('plannedType') || 'expense') as 'expense' | 'income';
     const type = (selectedMode === 'planned' ? plannedType : selectedMode) as TransactionRecord['type'];
-    const amount = Math.abs(Number(form.get('amount') || 0));
-    const date = String(form.get('date') || '2026-09-20');
     const account = String(form.get('account') || 'CIB');
-    const category = String(form.get('category') || 'General');
-    const title = String(form.get('title') || category);
-    const payee = String(form.get('payee') || '');
-    const description = String(form.get('description') || '');
+    const transferTo = String(form.get('transferTo') || '');
+    const method = String(form.get('method') || account);
+    const fee = Math.abs(Number(form.get('fee') || 0));
+    const title = lineItems.length > 1
+      ? lineItems.filter((item) => item.name.trim()).map((item) => item.name.trim()).join(', ') || (type === 'income' ? 'Income' : type === 'transfer' ? 'Transfer' : 'Expense')
+      : lineItems[0]?.name.trim() || lineItems[0]?.category || 'Transaction';
+    const category = lineItems.length > 1 ? 'Multiple items' : lineItems[0]?.category || 'Other';
+    const date = String(form.get('date') || '2026-09-20');
     const status = selectedMode === 'planned'
       ? 'planned'
       : String(form.get('status') || 'cleared') as TransactionRecord['status'];
@@ -191,16 +273,20 @@ function TransactionsPreview() {
       id: 'tx-' + Date.now(),
       date: new Date(date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
       title,
-      account,
+      account: selectedMode === 'transfer' ? account + ' → ' + transferTo : account,
       category,
       amount: type === 'expense' ? -amount : amount,
       type,
-      payee,
-      description,
+      payee: String(form.get('payee') || ''),
+      description: String(form.get('description') || ''),
       className: String(form.get('className') || 'Personal'),
       checkNumber: String(form.get('checkNumber') || ''),
       status,
       recurring: form.get('recurring') === 'on',
+      items: lineItems.filter((item) => item.name.trim() || item.amount > 0),
+      attachments,
+      method,
+      fee,
     };
 
     setRows((current) => [record, ...current]);
@@ -213,13 +299,13 @@ function TransactionsPreview() {
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Checkbook register</p>
           <h2 className="mt-1 font-display text-3xl font-extrabold">Transactions</h2>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Record, filter and review income, expenses, transfers and planned recurring transactions.</p>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">One transaction can contain multiple items, its own payment method, fees and attachments.</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowFilters((value) => !value)} className={'inline-flex h-11 items-center gap-2 rounded-2xl border px-4 text-sm font-bold ' + (showFilters ? 'border-primary bg-primary/5 text-primary' : 'border-border')}>
             <Filter className="size-4" /> Filters
           </button>
-          <button onClick={() => setShowAdd(true)} className="inline-flex h-11 items-center gap-2 rounded-2xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm">
+          <button onClick={openAdd} className="inline-flex h-11 items-center gap-2 rounded-2xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm">
             <Plus className="size-4" /> Add transaction
           </button>
         </div>
@@ -316,12 +402,25 @@ function TransactionsPreview() {
               <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Transaction details</p><h3 className="mt-1 font-display text-2xl font-extrabold">{selected.title}</h3><p className="mt-1 text-xs text-muted-foreground">{selected.date} · {selected.account}</p></div>
               <button onClick={() => setSelected(null)} className="grid size-9 place-items-center rounded-xl hover:bg-muted"><X className="size-5" /></button>
             </div>
-            <div className="grid gap-3 p-6 sm:grid-cols-2">
-              <Card className="p-4"><p className="text-[11px] text-muted-foreground">Amount</p><p className={'mt-2 font-display text-2xl font-extrabold ' + (selected.amount >= 0 ? 'text-primary' : 'text-destructive')}>{selected.amount >= 0 ? '+' : ''}{money(selected.amount)}</p></Card>
-              <Card className="p-4"><p className="text-[11px] text-muted-foreground">Type</p><p className="mt-2 text-sm font-bold capitalize">{selected.type}</p></Card>
-              <Card className="p-4"><p className="text-[11px] text-muted-foreground">Category</p><p className="mt-2 text-sm font-bold">{selected.category}</p></Card>
-              <Card className="p-4"><p className="text-[11px] text-muted-foreground">Status</p><p className="mt-2 text-sm font-bold">{selected.status}</p></Card>
-              <Card className="p-4 sm:col-span-2"><p className="text-[11px] text-muted-foreground">Payee / Description</p><p className="mt-2 text-sm font-bold">{selected.payee || '—'}</p><p className="mt-1 text-xs text-muted-foreground">{selected.description || '—'}</p></Card>
+            <div className="space-y-4 p-6">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Amount</p><p className={'mt-2 font-display text-2xl font-extrabold ' + (selected.amount >= 0 ? 'text-primary' : 'text-destructive')}>{selected.amount >= 0 ? '+' : ''}{money(selected.amount)}</p></Card>
+                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Method</p><p className="mt-2 text-sm font-bold">{selected.method || selected.account}</p></Card>
+              </div>
+              {!!selected.items?.length && (
+                <Card className="p-4">
+                  <p className="text-[11px] text-muted-foreground">Items</p>
+                  <div className="mt-3 divide-y divide-border">{selected.items.map((item: LineItem) => <div key={item.id} className="flex items-center justify-between py-2 text-sm"><div><p className="font-semibold">{item.name || item.category}</p><p className="text-[10px] text-muted-foreground">{item.category}</p></div><p className="font-bold">{money(item.amount)}</p></div>)}</div>
+                </Card>
+              )}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Type</p><p className="mt-2 text-sm font-bold capitalize">{selected.type}</p></Card>
+                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Status</p><p className="mt-2 text-sm font-bold">{selected.status}</p></Card>
+                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Category</p><p className="mt-2 text-sm font-bold">{selected.category}</p></Card>
+                <Card className="p-4"><p className="text-[11px] text-muted-foreground">Fee</p><p className="mt-2 text-sm font-bold">{money(selected.fee || 0)}</p></Card>
+              </div>
+              {selected.attachments?.length ? <Card className="p-4"><p className="text-[11px] text-muted-foreground">Attachments</p><div className="mt-2 space-y-1">{selected.attachments.map((file: Attachment) => <p key={file.name} className="text-xs font-semibold">{file.name}</p>)}</div></Card> : null}
+              <Card className="p-4"><p className="text-[11px] text-muted-foreground">Payee / Description</p><p className="mt-2 text-sm font-bold">{selected.payee || '—'}</p><p className="mt-1 text-xs text-muted-foreground">{selected.description || '—'}</p></Card>
             </div>
             <div className="flex justify-end border-t border-border p-4"><button onClick={() => setSelected(null)} className="h-10 rounded-xl border border-border px-4 text-xs font-bold">Close</button></div>
           </div>
@@ -329,58 +428,199 @@ function TransactionsPreview() {
       )}
 
       {showAdd && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center">
-          <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-border bg-card shadow-2xl">
-            <div className="flex items-start justify-between border-b border-border px-6 py-5">
-              <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Checkbook</p><h3 className="mt-1 font-display text-2xl font-extrabold">Add transaction</h3><p className="mt-1 text-xs text-muted-foreground">Record an actual or planned transaction.</p></div>
-              <button onClick={() => setShowAdd(false)} className="grid size-9 place-items-center rounded-xl hover:bg-muted"><X className="size-5" /></button>
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-foreground/30 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-t-[2rem] border border-border bg-card shadow-2xl sm:rounded-[2rem]">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-5 py-4 sm:px-6">
+              <button type="button" onClick={() => setShowAdd(false)} className="grid size-11 place-items-center rounded-full bg-muted hover:bg-muted/70"><X className="size-6" /></button>
+              <div className="text-center">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Checkbook</p>
+                <h3 className="mt-1 font-display text-xl font-extrabold">
+                  {entryMode === 'expense' ? 'Expense' : entryMode === 'income' ? 'Income' : entryMode === 'transfer' ? 'Transfer' : 'Planned'}
+                </h3>
+              </div>
+              <button type="submit" form="transaction-form" className="grid size-11 place-items-center rounded-full bg-primary text-primary-foreground shadow-sm"><span className="text-2xl leading-none">✓</span></button>
             </div>
-            <form onSubmit={addTransaction} className="space-y-5 p-6">
-              <div className="grid gap-2 sm:grid-cols-4">
-                {[
-                  ['expense', 'Expense'],
-                  ['income', 'Income'],
-                  ['transfer', 'Transfer'],
-                  ['planned', 'Planned'],
-                ].map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setEntryMode(value as typeof entryMode)}
-                    className={'rounded-xl border p-3 text-center text-xs font-bold transition-colors ' + (
-                      entryMode === value
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border hover:border-primary/40 hover:bg-muted'
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-                <input type="hidden" name="entryMode" value={entryMode} />
+
+            <form id="transaction-form" onSubmit={addTransaction} className="space-y-3 p-4 sm:p-6">
+              <div className="grid overflow-hidden rounded-3xl border border-border bg-muted/20">
+                <div className="grid grid-cols-4">
+                  {[
+                    ['expense', 'Expense'],
+                    ['income', 'Income'],
+                    ['transfer', 'Transfer'],
+                    ['planned', 'Planned'],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setEntryMode(value as EntryMode)}
+                      className={'border-b-2 px-2 py-4 text-xs font-bold transition-colors ' + (
+                        entryMode === value
+                          ? 'border-primary bg-card text-primary'
+                          : 'border-transparent text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              {entryMode === 'planned' && (
-                <label className="block">
-                  <span className="mb-2 block text-xs font-bold">Planned transaction type</span>
-                  <select name="plannedType" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm">
-                    <option value="expense">Expense</option>
-                    <option value="income">Income</option>
-                  </select>
-                </label>
+
+              {entryMode === 'expense' && (
+                <div className="overflow-hidden rounded-3xl border border-border bg-card">
+                  <label className="flex min-h-20 items-center justify-between gap-4 border-b border-border px-5">
+                    <div><p className="text-xs text-muted-foreground">Paid from</p><p className="mt-1 text-base font-bold">{String((accountRows.find((item) => item.name === 'CIB') ?? accountRows[0]).name)}</p></div>
+                    <select name="account" className="max-w-[50%] rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select>
+                  </label>
+                </div>
               )}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label><span className="mb-2 block text-xs font-bold">Amount *</span><input name="amount" required type="number" step="0.01" min="0" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm" /></label>
-                <label><span className="mb-2 block text-xs font-bold">Date *</span><input name="date" required type="date" defaultValue="2026-09-20" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm" /></label>
-                <label><span className="mb-2 block text-xs font-bold">Account *</span><select name="account" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select></label>
-                <label><span className="mb-2 block text-xs font-bold">Category *</span><select name="category" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm">{categories.map((category) => <option key={category}>{category}</option>)}</select></label>
-                <label><span className="mb-2 block text-xs font-bold">Payee</span><input name="payee" placeholder="Who did you pay / receive from?" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm" /></label>
-                <label><span className="mb-2 block text-xs font-bold">Check #</span><input name="checkNumber" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm" /></label>
-                <label><span className="mb-2 block text-xs font-bold">Class</span><select name="className" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"><option>Personal</option><option>Business</option><option>Travel</option></select></label>
-                <label><span className="mb-2 block text-xs font-bold">Status</span><select name="status" disabled={entryMode === 'planned'} defaultValue="cleared" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"><option value="cleared">Cleared</option><option value="not-cleared">Not cleared</option></select></label>
+
+              {entryMode === 'income' && (
+                <div className="overflow-hidden rounded-3xl border border-border bg-card">
+                  <label className="flex min-h-20 items-center justify-between gap-4 border-b border-border px-5">
+                    <div><p className="text-xs text-muted-foreground">Deposit to</p><p className="mt-1 text-base font-bold">CIB</p></div>
+                    <select name="account" className="max-w-[50%] rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select>
+                  </label>
+                  <label className="flex min-h-20 items-center justify-between gap-4 px-5">
+                    <div><p className="text-xs text-muted-foreground">Income source</p><p className="mt-1 text-base font-bold">Choose source</p></div>
+                    <input name="payee" placeholder="Salary, client, dividend..." className="max-w-[55%] rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+                  </label>
+                </div>
+              )}
+
+              {entryMode === 'transfer' && (
+                <div className="overflow-hidden rounded-3xl border border-border bg-card">
+                  <label className="flex min-h-20 items-center justify-between gap-4 border-b border-border px-5">
+                    <div><p className="text-xs text-muted-foreground">From account</p><p className="mt-1 text-base font-bold">Cash</p></div>
+                    <select name="account" className="max-w-[50%] rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select>
+                  </label>
+                  <label className="flex min-h-20 items-center justify-between gap-4 border-b border-border px-5">
+                    <div><p className="text-xs text-muted-foreground">To account</p><p className="mt-1 text-base font-bold">CIB</p></div>
+                    <select name="transferTo" className="max-w-[50%] rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select>
+                  </label>
+                  <label className="flex min-h-20 items-center justify-between gap-4 px-5">
+                    <div><p className="text-xs text-muted-foreground">Transfer fee</p><p className="mt-1 text-base font-bold">EGP</p></div>
+                    <input name="fee" type="number" min="0" step="0.01" defaultValue="0" className="max-w-[45%] rounded-xl border border-border bg-background px-3 py-2 text-right text-sm font-bold" />
+                  </label>
+                </div>
+              )}
+
+              {entryMode === 'planned' && (
+                <div className="overflow-hidden rounded-3xl border border-border bg-card">
+                  <label className="flex min-h-20 items-center justify-between gap-4 px-5">
+                    <div><p className="text-xs text-muted-foreground">Planned type</p><p className="mt-1 text-base font-bold">Expense</p></div>
+                    <select name="plannedType" className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold"><option value="expense">Expense</option><option value="income">Income</option></select>
+                  </label>
+                </div>
+              )}
+
+              <div className="overflow-hidden rounded-3xl border border-border bg-card">
+                <div className="flex min-h-24 items-center justify-between gap-4 px-5">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Amount</p>
+                    <p className="mt-1 text-3xl font-extrabold">EGP</p>
+                  </div>
+                  <input
+                    name="displayAmount"
+                    type="text"
+                    inputMode="decimal"
+                    value={lineItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0) || ''}
+                    onChange={(event) => {
+                      const value = Number(event.target.value.replace(/[^0-9.]/g, '')) || 0;
+                      setLineItems((items) => items.length === 1 ? [{ ...items[0], amount: value }] : items);
+                    }}
+                    placeholder="0"
+                    className="w-full max-w-[65%] bg-transparent text-right text-4xl font-extrabold outline-none"
+                  />
+                  <input type="hidden" name="amount" value={lineItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)} />
+                </div>
               </div>
-              <label className="flex items-center gap-2 text-xs font-semibold"><input name="recurring" type="checkbox" /> Recurring transaction</label>
-              <label><span className="mb-2 block text-xs font-bold">Description</span><textarea name="description" rows={3} className="w-full rounded-xl border border-input bg-background px-3 py-3 text-sm" placeholder="Description, notes or reference..." /></label>
-              <div className="flex justify-end gap-2 border-t border-border pt-4"><button type="button" onClick={() => setShowAdd(false)} className="h-10 rounded-xl border border-border px-4 text-xs font-bold">Cancel</button><button type="submit" className="h-10 rounded-xl bg-primary px-5 text-xs font-bold text-primary-foreground">Save transaction</button></div>
+
+              <div className="overflow-hidden rounded-3xl border border-border bg-card">
+                <div className="flex items-center justify-between border-b border-border px-5 py-4">
+                  <div><p className="font-bold">Items</p><p className="text-[11px] text-muted-foreground">Add several purchases to one transaction.</p></div>
+                  <button type="button" onClick={addLineItem} className="grid size-10 place-items-center rounded-full border border-border hover:bg-muted"><Plus className="size-4" /></button>
+                </div>
+                <div className="divide-y divide-border">
+                  {lineItems.map((item, index) => (
+                    <div key={item.id} className="space-y-3 p-4">
+                      <div className="flex items-center gap-2">
+                        <input value={item.name} onChange={(event) => updateLineItem(item.id, { name: event.target.value })} placeholder={'Item ' + (index + 1)} className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-3 text-sm" />
+                        {lineItems.length > 1 && <button type="button" onClick={() => removeLineItem(item.id)} className="grid size-10 place-items-center rounded-xl border border-border text-muted-foreground hover:text-destructive">×</button>}
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
+                        <div className="flex gap-2">
+                          <select value={item.category} onChange={(event) => updateLineItem(item.id, { category: event.target.value })} className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-3 text-sm">
+                            {categories.map((category) => <option key={category}>{category}</option>)}
+                          </select>
+                          <button type="button" onClick={() => setShowCategoryManager(true)} className="h-11 shrink-0 rounded-xl border border-border px-3 text-xs font-bold">Categories</button>
+                        </div>
+                        <input value={item.amount || ''} onChange={(event) => updateLineItem(item.id, { amount: Number(event.target.value) || 0 })} type="number" min="0" step="0.01" placeholder="Amount" className="h-11 rounded-xl border border-border bg-background px-3 text-right text-sm font-bold" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-3xl border border-border bg-card">
+                <label className="flex cursor-pointer items-center gap-4 px-5 py-5">
+                  <div className="grid size-11 place-items-center rounded-2xl bg-muted"><FileText className="size-5" /></div>
+                  <div className="flex-1"><p className="font-bold">Attach receipt / file / photo</p><p className="text-[11px] text-muted-foreground">JPG, PNG, PDF and other files</p></div>
+                  <span className="rounded-xl border border-border px-3 py-2 text-xs font-bold">Add</span>
+                  <input type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={handleAttachments} className="hidden" />
+                </label>
+                {!!attachments.length && (
+                  <div className="border-t border-border px-5 py-3">
+                    {attachments.map((file) => <div key={file.name} className="flex items-center justify-between py-1 text-xs"><span className="truncate font-semibold">{file.name}</span><button type="button" onClick={() => setAttachments((items) => items.filter((item) => item.name !== file.name))} className="ml-3 text-muted-foreground hover:text-destructive">Remove</button></div>)}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid overflow-hidden rounded-3xl border border-border bg-card">
+                <label className="flex min-h-20 items-center justify-between gap-4 border-b border-border px-5">
+                  <div><p className="text-xs text-muted-foreground">Date & time</p><p className="mt-1 font-bold">20 Sep 2026</p></div>
+                  <input name="date" required type="date" defaultValue="2026-09-20" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+                </label>
+                <label className="flex min-h-20 items-center justify-between gap-4 border-b border-border px-5">
+                  <div><p className="text-xs text-muted-foreground">Status</p><p className="mt-1 font-bold">{entryMode === 'planned' ? 'Planned' : 'Cleared'}</p></div>
+                  <select name="status" disabled={entryMode === 'planned'} defaultValue="cleared" className="rounded-xl border border-border bg-background px-3 py-2 text-sm"><option value="cleared">Cleared</option><option value="not-cleared">Not cleared</option></select>
+                </label>
+                <label className="flex min-h-20 items-center justify-between gap-4 border-b border-border px-5">
+                  <div><p className="text-xs text-muted-foreground">Class</p><p className="mt-1 font-bold">Personal</p></div>
+                  <select name="className" className="rounded-xl border border-border bg-background px-3 py-2 text-sm"><option>Personal</option><option>Business</option><option>Travel</option></select>
+                </label>
+                <label className="flex min-h-20 items-center justify-between gap-4 px-5">
+                  <div><p className="text-xs text-muted-foreground">Notes</p><p className="mt-1 font-bold">Optional</p></div>
+                  <input name="description" placeholder="Add a note..." className="max-w-[55%] rounded-xl border border-border bg-background px-3 py-2 text-right text-sm" />
+                </label>
+              </div>
+
+              <label className="flex items-center gap-3 rounded-3xl border border-border bg-card px-5 py-4 text-sm font-semibold">
+                <input name="recurring" type="checkbox" /> Repeat this transaction
+              </label>
             </form>
+
+            {showCategoryManager && (
+              <div className="border-t border-border bg-muted/30 p-5">
+                <div className="mx-auto max-w-2xl rounded-3xl border border-border bg-card p-5">
+                  <div className="flex items-center justify-between">
+                    <div><p className="font-display text-lg font-extrabold">My categories</p><p className="text-xs text-muted-foreground">Create and manage your own categories.</p></div>
+                    <button type="button" onClick={() => setShowCategoryManager(false)} className="grid size-9 place-items-center rounded-xl hover:bg-muted"><X className="size-5" /></button>
+                  </div>
+                  <div className="mt-4 flex gap-2">
+                    <input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addCategory(); } }} placeholder="New category" className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-3 text-sm" />
+                    <button type="button" onClick={addCategory} className="h-11 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground">Add</button>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {categories.map((category) => (
+                      <button type="button" key={category} onClick={() => setCategories((items) => items.filter((item) => item !== category))} className="rounded-full border border-border px-3 py-2 text-xs font-semibold hover:border-destructive hover:text-destructive">
+                        {category} ×
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
