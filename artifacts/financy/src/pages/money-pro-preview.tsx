@@ -130,6 +130,26 @@ function InvestmentsPreview() {
 
   const [tab, setTab] = useState<InvestmentTab>('overview');
   const [showAdd, setShowAdd] = useState(false);
+  type Portfolio = {
+    id: string;
+    name: string;
+    type: string;
+    currency: string;
+    target: number;
+    description: string;
+    status: 'Active' | 'Archived';
+  };
+
+  const [portfolioRows, setPortfolioRows] = useState<Portfolio[]>([
+    { id: 'p1', name: 'Wealth', type: 'Wealth', currency: 'EGP', target: 60, description: 'Long-term personal wealth portfolio', status: 'Active' },
+    { id: 'p2', name: 'Retirement', type: 'Retirement', currency: 'EGP', target: 25, description: 'Retirement investments', status: 'Active' },
+    { id: 'p3', name: 'Education', type: 'Education', currency: 'EGP', target: 15, description: 'Education savings and investments', status: 'Active' },
+  ]);
+  const [portfolioFilter, setPortfolioFilter] = useState<'active' | 'archived' | 'all'>('active');
+  const [portfolioSearch, setPortfolioSearch] = useState('');
+  const [portfolioModal, setPortfolioModal] = useState<'add' | 'edit' | null>(null);
+  const [editingPortfolio, setEditingPortfolio] = useState<Portfolio | null>(null);
+
   const [holdings, setHoldings] = useState<Holding[]>([
     { id: 'h1', asset: 'Orascom Construction', symbol: 'ORAS', type: 'Stock', portfolio: 'Wealth', platform: 'Thndr', quantity: 120, avgCost: 133.33, price: 160, currency: 'EGP' },
     { id: 'h2', asset: 'EFG Holding', symbol: 'EFID', type: 'Stock', portfolio: 'Wealth', platform: 'Thndr', quantity: 400, avgCost: 20, price: 24.5, currency: 'EGP' },
@@ -161,6 +181,30 @@ function InvestmentsPreview() {
   const currentValue = holdings.reduce((sum, row) => sum + row.quantity * row.price, 0);
   const unrealized = currentValue - invested;
   const returnPct = invested ? (unrealized / invested) * 100 : 0;
+
+  const openPortfolioModal = (portfolio?: Portfolio) => {
+    setEditingPortfolio(portfolio ?? null);
+    setPortfolioModal(portfolio ? 'edit' : 'add');
+  };
+
+  const savePortfolio = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get('name') || '').trim();
+    if (!name) return;
+    const next: Portfolio = {
+      id: editingPortfolio?.id ?? 'p-' + Date.now(),
+      name,
+      type: String(form.get('type') || 'Other'),
+      currency: String(form.get('currency') || 'EGP'),
+      target: Math.max(0, Number(form.get('target') || 0)),
+      description: String(form.get('description') || '').trim(),
+      status: String(form.get('status') || 'Active') as Portfolio['status'],
+    };
+    setPortfolioRows((rows) => editingPortfolio ? rows.map((row) => row.id === editingPortfolio.id ? next : row) : [next, ...rows]);
+    setPortfolioModal(null);
+    setEditingPortfolio(null);
+  };
 
   function addHolding(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -224,26 +268,6 @@ function InvestmentsPreview() {
       )}
 
       {tab === 'portfolios' && (() => {
-        type Portfolio = {
-          id: string;
-          name: string;
-          type: string;
-          currency: string;
-          target: number;
-          description: string;
-          status: 'Active' | 'Archived';
-        };
-
-        const [portfolioRows, setPortfolioRows] = useState<Portfolio[]>([
-          { id: 'p1', name: 'Wealth', type: 'Wealth', currency: 'EGP', target: 60, description: 'Long-term personal wealth portfolio', status: 'Active' },
-          { id: 'p2', name: 'Retirement', type: 'Retirement', currency: 'EGP', target: 25, description: 'Retirement investments', status: 'Active' },
-          { id: 'p3', name: 'Education', type: 'Education', currency: 'EGP', target: 15, description: 'Education savings and investments', status: 'Active' },
-        ]);
-        const [portfolioFilter, setPortfolioFilter] = useState<'active' | 'archived' | 'all'>('active');
-        const [portfolioSearch, setPortfolioSearch] = useState('');
-        const [portfolioModal, setPortfolioModal] = useState<'add' | 'edit' | null>(null);
-        const [editingPortfolio, setEditingPortfolio] = useState<Portfolio | null>(null);
-
         const visiblePortfolios = portfolioRows.filter((row) => {
           const statusMatch = portfolioFilter === 'all' || row.status.toLowerCase() === portfolioFilter;
           const searchMatch = !portfolioSearch || [row.name, row.type, row.description].join(' ').toLowerCase().includes(portfolioSearch.toLowerCase());
@@ -253,25 +277,6 @@ function InvestmentsPreview() {
         const openPortfolioModal = (portfolio?: Portfolio) => {
           setEditingPortfolio(portfolio ?? null);
           setPortfolioModal(portfolio ? 'edit' : 'add');
-        };
-
-        const savePortfolio = (event: React.FormEvent<HTMLFormElement>) => {
-          event.preventDefault();
-          const form = new FormData(event.currentTarget);
-          const name = String(form.get('name') || '').trim();
-          if (!name) return;
-          const next: Portfolio = {
-            id: editingPortfolio?.id ?? 'p-' + Date.now(),
-            name,
-            type: String(form.get('type') || 'Other'),
-            currency: String(form.get('currency') || 'EGP'),
-            target: Math.max(0, Number(form.get('target') || 0)),
-            description: String(form.get('description') || '').trim(),
-            status: String(form.get('status') || 'Active') as Portfolio['status'],
-          };
-          setPortfolioRows((rows) => editingPortfolio ? rows.map((row) => row.id === editingPortfolio.id ? next : row) : [next, ...rows]);
-          setPortfolioModal(null);
-          setEditingPortfolio(null);
         };
 
         return (
