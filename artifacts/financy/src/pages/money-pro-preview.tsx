@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDownLeft,
   ArrowLeftRight,
@@ -21,6 +21,15 @@ import {
   WalletCards,
   X,
 } from 'lucide-react';
+import {
+  categoryLabel,
+  DEFAULT_TRANSACTION_SETTINGS,
+  loadTransactionSettings,
+  saveTransactionSettings,
+  TRANSACTION_FIELD_LABELS,
+  type TransactionFieldKey,
+  type TransactionSettings,
+} from '@/lib/transaction-settings';
 
 type Screen = 'overview' | 'accounts' | 'transactions' | 'calendar' | 'budgets' | 'reports';
 
@@ -107,19 +116,6 @@ function TransactionsPreview() {
   type LineItem = { id: string; name: string; category: string; amount: number };
   type Attachment = { name: string; type: string };
 
-  const defaultCategories = [
-    'Food & Dining',
-    'Bills',
-    'Transport',
-    'Education',
-    'Shopping',
-    'Health',
-    'Entertainment',
-    'Salary',
-    'Investment income',
-    'Other',
-  ];
-
   const [rows, setRows] = useState<TransactionRecord[]>(() =>
     transactionRows.map((row, index) => ({
       ...row,
@@ -148,13 +144,29 @@ function TransactionsPreview() {
   const [newCategory, setNewCategory] = useState('');
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [showMoreDetails, setShowMoreDetails] = useState(false);
+  const [showFieldSettings, setShowFieldSettings] = useState(false);
+  const [transactionSettings, setTransactionSettings] = useState<TransactionSettings>(() => loadTransactionSettings());
 
   const accountOptions = accountRows.map((account) => account.name);
+  const expenseCategoryOptions = transactionSettings.expenseCategories.map((item) => ({
+    value: item.name,
+    label: categoryLabel(item, transactionSettings.expenseCategories),
+  }));
+  const incomeCategoryOptions = transactionSettings.incomeCategories.map((item) => ({
+    value: item.name,
+    label: categoryLabel(item, transactionSettings.incomeCategories),
+  }));
   const categoriesForFilter = Array.from(new Set([
     ...categories,
     ...rows.map((row) => row.category),
   ]));
   const itemTotal = lineItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
+  useEffect(() => {
+    const onSettingsChanged = () => setTransactionSettings(loadTransactionSettings());
+    window.addEventListener('financy-transaction-settings-changed', onSettingsChanged);
+    return () => window.removeEventListener('financy-transaction-settings-changed', onSettingsChanged);
+  }, []);
 
   const filtered = useMemo(() => {
     const now = new Date(2026, 8, 20);
@@ -208,7 +220,7 @@ function TransactionsPreview() {
 
   function resetAddForm() {
     setEntryMode('expense');
-    setLineItems([{ id: 'item-' + Date.now(), name: '', category: categories[0] ?? 'Other', amount: 0 }]);
+    setLineItems([{ id: 'item-' + Date.now(), name: '', category: expenseCategoryOptions[0]?.value ?? 'Other', amount: 0 }]);
     setAttachments([]);
     setNewCategory('');
     setShowCategoryManager(false);
@@ -232,7 +244,7 @@ function TransactionsPreview() {
       {
         id: 'item-' + Date.now() + '-' + items.length,
         name: '',
-        category: categories[0] ?? 'Other',
+        category: expenseCategoryOptions[0]?.value ?? 'Other',
         amount: 0,
       },
     ]);
@@ -248,11 +260,20 @@ function TransactionsPreview() {
 
   function addCategory() {
     const value = newCategory.trim();
-    if (!value || categories.some((category) => category.toLowerCase() === value.toLowerCase())) return;
-    setCategories((items) => [...items, value]);
-    setLineItems((items) =>
-      items.map((item, index) => index === items.length - 1 && !item.name ? { ...item, category: value } : item),
-    );
+    if (!value) return;
+    const next = { id: 'exp-custom-' + Date.now(), name: value, parentId: null };
+    const exists = transactionSettings.expenseCategories.some((item) => item.name.toLowerCase() === value.toLowerCase());
+    if (!exists) {
+      const nextSettings = {
+        ...transactionSettings,
+        expenseCategories: [...transactionSettings.expenseCategories, next],
+      };
+      setTransactionSettings(nextSettings);
+      saveTransactionSettings(nextSettings);
+      setLineItems((items) =>
+        items.map((item, index) => index === items.length - 1 && !item.name ? { ...item, category: value } : item),
+      );
+    }
     setNewCategory('');
   }
 
@@ -528,8 +549,8 @@ function TransactionsPreview() {
       )}
 
       {showAdd && (
-        <div className="fixed inset-0 z-[80] flex justify-end bg-foreground/25 backdrop-blur-sm">
-          <div className="flex h-full w-full max-w-[470px] flex-col border-l border-border bg-background shadow-2xl">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-foreground/30 p-3 backdrop-blur-sm sm:p-6">
+          <div className="flex max-h-[94vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[2rem] border border-border bg-background shadow-2xl">
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-5 py-4">
               <button type="button" onClick={closeAdd} className="text-sm font-medium text-muted-foreground hover:text-foreground">Cancel</button>
               <div className="text-center">
@@ -538,7 +559,12 @@ function TransactionsPreview() {
                   {entryMode === 'expense' ? 'Expense' : entryMode === 'income' ? 'Income' : entryMode === 'transfer' ? 'Money Transfer' : 'Planned'}
                 </h3>
               </div>
-              <button type="submit" form="transaction-form" className="text-sm font-bold text-primary">Save</button>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setShowFieldSettings(true)} className="grid size-9 place-items-center rounded-xl border border-border text-muted-foreground hover:bg-muted" aria-label="Transaction field settings">
+                  <Settings className="size-4" />
+                </button>
+                <button type="submit" form="transaction-form" className="text-sm font-bold text-primary">Save</button>
+              </div>
             </div>
 
             <form id="transaction-form" onSubmit={addTransaction} className="min-h-0 flex-1 overflow-y-auto">
@@ -578,108 +604,57 @@ function TransactionsPreview() {
                     </div>
 
                     <div className="overflow-hidden rounded-2xl border border-border bg-card">
-                      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                        <div><p className="text-sm font-bold">Items</p><p className="text-[10px] text-muted-foreground">Add several purchases to one transaction.</p></div>
-                        <button type="button" onClick={addLineItem} className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-2 text-[10px] font-bold"><Plus className="size-3.5" /> Add item</button>
-                      </div>
-                      <div className="divide-y divide-border">
-                        {lineItems.map((item, index) => (
-                          <div key={item.id} className="space-y-2 p-3">
-                            <div className="flex gap-2">
-                              <input value={item.name} onChange={(event) => updateLineItem(item.id, { name: event.target.value })} placeholder={'Item ' + (index + 1)} className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm" />
-                              {lineItems.length > 1 && <button type="button" onClick={() => removeLineItem(item.id)} className="grid size-10 place-items-center rounded-lg border border-border text-muted-foreground">×</button>}
-                            </div>
-                            <div className="grid grid-cols-[1fr_110px] gap-2">
-                              <select value={item.category} onChange={(event) => updateLineItem(item.id, { category: event.target.value })} className="h-10 rounded-lg border border-border bg-background px-2 text-sm">{categories.map((category) => <option key={category}>{category}</option>)}</select>
-                              <input value={item.amount || ''} onChange={(event) => updateLineItem(item.id, { amount: Number(event.target.value) || 0 })} type="number" min="0" step="0.01" placeholder="0.00" className="h-10 rounded-lg border border-border bg-background px-2 text-right text-sm font-bold" />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex items-center justify-between border-t border-border bg-muted/40 px-4 py-3">
-                        <span className="text-xs font-semibold text-muted-foreground">Total</span>
-                        <span className="text-sm font-extrabold">{money(itemTotal)}</span>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {entryMode === 'income' && (
-                  <div className="overflow-hidden rounded-2xl border border-border bg-card">
-                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4">
-                      <span className="text-sm font-semibold">Deposit to</span>
-                      <select name="account" defaultValue={accountOptions[0]} className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select>
-                    </div>
-                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4">
-                      <span className="text-sm font-semibold">Source</span>
-                      <input name="payee" placeholder="Salary, client, dividend" className="max-w-[60%] rounded-lg border border-border bg-background px-2 py-2 text-right text-sm" />
-                    </div>
-                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4">
-                      <span className="text-sm font-semibold">Category</span>
-                      <select name="incomeCategory" className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none">{categories.map((category) => <option key={category}>{category}</option>)}</select>
-                    </div>
-                    <div className="flex min-h-18 items-center justify-between px-4">
-                      <span className="text-sm font-semibold">Amount</span>
-                      <input name="amount" type="number" min="0" step="0.01" required placeholder="0.00" className="w-full max-w-[60%] bg-transparent text-right text-3xl font-extrabold outline-none" />
-                    </div>
+                  <div className="border-b border-border px-4 py-3">
+                    <p className="text-sm font-bold">Optional details</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">Use the gear above to choose which fields are visible.</p>
                   </div>
-                )}
-
-                {entryMode === 'transfer' && (
-                  <>
-                    <div className="overflow-hidden rounded-2xl border border-border bg-card">
-                      <div className="flex min-h-14 items-center justify-between border-b border-border px-4">
-                        <span className="text-sm font-semibold">From</span>
-                        <select name="account" defaultValue={accountOptions[0]} className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select>
-                      </div>
-                      <div className="flex min-h-14 items-center justify-between px-4">
-                        <span className="text-sm font-semibold">To</span>
-                        <select name="transferTo" defaultValue={accountOptions[1] ?? accountOptions[0]} className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select>
-                      </div>
-                    </div>
-                    <div className="overflow-hidden rounded-2xl border border-border bg-card">
-                      <label className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Amount</span><input name="amount" type="number" min="0" step="0.01" required placeholder="0.00" className="max-w-[55%] bg-transparent text-right text-2xl font-extrabold outline-none" /></label>
-                      <label className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Fee</span><input name="fee" type="number" min="0" step="0.01" defaultValue="0" className="max-w-[45%] bg-transparent text-right text-sm font-bold outline-none" /></label>
-                      <label className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Exchange rate</span><input name="exchangeRate" type="number" min="0.000001" step="0.000001" defaultValue="1" className="max-w-[45%] bg-transparent text-right text-sm font-bold outline-none" /></label>
-                      <label className="flex min-h-14 items-center justify-between px-4"><span className="text-sm font-semibold">Received</span><input name="receivedAmount" type="number" min="0" step="0.01" placeholder="Same as amount" className="max-w-[45%] bg-transparent text-right text-sm font-bold outline-none" /></label>
-                    </div>
-                  </>
-                )}
-
-                {entryMode === 'planned' && (
-                  <div className="overflow-hidden rounded-2xl border border-border bg-card">
-                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Type</span><select name="plannedType" className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none"><option value="expense">Planned expense</option><option value="income">Planned income</option></select></div>
-                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Account</span><select name="account" className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select></div>
-                    <div className="flex min-h-14 items-center justify-between border-b border-border px-4"><span className="text-sm font-semibold">Category</span><select name="plannedCategory" className="max-w-[60%] bg-transparent text-right text-sm font-bold outline-none">{categories.map((category) => <option key={category}>{category}</option>)}</select></div>
-                    <div className="flex min-h-16 items-center justify-between px-4"><span className="text-sm font-semibold">Amount</span><input name="amount" type="number" min="0" step="0.01" required placeholder="0.00" className="max-w-[60%] bg-transparent text-right text-2xl font-extrabold outline-none" /></div>
-                  </div>
-                )}
-
-                <div className="overflow-hidden rounded-2xl border border-border bg-card">
-                  <label className="flex cursor-pointer items-center gap-3 px-4 py-4">
-                    <div className="grid size-10 place-items-center rounded-xl bg-muted"><FileText className="size-4" /></div>
-                    <div className="min-w-0 flex-1"><p className="text-sm font-bold">Attach receipt</p><p className="text-[10px] text-muted-foreground">Photo, PDF or file</p></div>
-                    <span className="rounded-lg border border-border px-2.5 py-2 text-[10px] font-bold">Add</span>
-                    <input type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={handleAttachments} className="hidden" />
-                  </label>
-                  {!!attachments.length && <div className="border-t border-border px-4 py-2">{attachments.map((file) => <div key={file.name} className="flex items-center justify-between py-1 text-[10px]"><span className="truncate font-semibold">{file.name}</span><button type="button" onClick={() => setAttachments((items) => items.filter((item) => item.name !== file.name))} className="ml-2 text-muted-foreground">Remove</button></div>)}</div>}
-                </div>
-
-                <div className="overflow-hidden rounded-2xl border border-border bg-card">
-                  <button type="button" onClick={() => setShowMoreDetails((value) => !value)} className="flex w-full items-center justify-between px-4 py-4 text-left">
-                    <div><p className="text-sm font-bold">More details</p><p className="mt-1 text-[10px] text-muted-foreground">Optional information</p></div>
-                    <ChevronRight className={'size-4 transition-transform ' + (showMoreDetails ? 'rotate-90' : '')} />
-                  </button>
-                  {showMoreDetails && (
-                    <div className="grid gap-3 border-t border-border p-4 sm:grid-cols-2">
-                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Date</span><input name="date" required type="date" defaultValue="2026-09-20" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" /></label>
+                  <div className="grid gap-3 p-4 sm:grid-cols-2">
+                    {transactionSettings.visibleOptionalFields.time && (
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Time</span><input name="time" type="time" defaultValue="18:30" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" /></label>
+                    )}
+                    {transactionSettings.visibleOptionalFields.payee && (
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Payee / Merchant</span><input name="payee" list="financy-payees" placeholder="Who did you pay / receive from?" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" /><datalist id="financy-payees">{transactionSettings.payees.map((item) => <option key={item} value={item} />)}</datalist></label>
+                    )}
+                    {transactionSettings.visibleOptionalFields.status && (
                       <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Status</span><select name="status" disabled={entryMode === 'planned'} defaultValue="cleared" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"><option value="cleared">Paid</option><option value="not-cleared">Not cleared</option></select></label>
-                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Payee</span><input name="payee2" placeholder="Payee" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" /></label>
-                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Payment method</span><input name="method" placeholder="Cash, card, bank transfer" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" /></label>
+                    )}
+                    {transactionSettings.visibleOptionalFields.person && (
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Person</span><select name="person" defaultValue={transactionSettings.people[0] ?? ''} className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm">{transactionSettings.people.map((item) => <option key={item}>{item}</option>)}</select></label>
+                    )}
+                    {transactionSettings.visibleOptionalFields.className && (
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Class</span><select name="className" defaultValue={transactionSettings.classes[0] ?? 'Personal'} className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm">{transactionSettings.classes.map((item) => <option key={item}>{item}</option>)}</select></label>
+                    )}
+                    {transactionSettings.visibleOptionalFields.reference && (
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Reference</span><input name="reference" placeholder="Reference number" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" /></label>
+                    )}
+                    {transactionSettings.visibleOptionalFields.tags && (
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Tags</span><select name="tag" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"><option value="">Choose tag</option>{transactionSettings.tags.map((item) => <option key={item}>{item}</option>)}</select></label>
+                    )}
+                    {transactionSettings.visibleOptionalFields.notes && (
                       <label className="block sm:col-span-2"><span className="mb-1.5 block text-[10px] font-bold">Notes</span><textarea name="description" rows={2} placeholder="Add a note..." className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" /></label>
-                      <label className="flex items-center gap-2 text-xs font-semibold sm:col-span-2"><input name="recurring" type="checkbox" /> Repeat this transaction</label>
-                    </div>
-                  )}
+                    )}
+                    {transactionSettings.visibleOptionalFields.recurring && (
+                      <label className="flex items-center gap-2 text-xs font-semibold"><input name="recurring" type="checkbox" /> Recurring</label>
+                    )}
+                    {transactionSettings.visibleOptionalFields.repeat && (
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Repeat</span><select name="repeat" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Yearly</option><option>Custom</option></select></label>
+                    )}
+                    {transactionSettings.visibleOptionalFields.nextDate && (
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Next Date</span><input name="nextDate" type="date" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" /></label>
+                    )}
+                    {transactionSettings.visibleOptionalFields.installment && (
+                      <label className="flex items-center gap-2 text-xs font-semibold"><input name="installment" type="checkbox" /> Installment</label>
+                    )}
+                    {transactionSettings.visibleOptionalFields.installmentCount && (
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Installment Count</span><input name="installmentCount" type="number" min="1" defaultValue="1" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" /></label>
+                    )}
+                    {transactionSettings.visibleOptionalFields.currentInstallment && (
+                      <label className="block"><span className="mb-1.5 block text-[10px] font-bold">Current Installment</span><input name="currentInstallment" type="number" min="1" defaultValue="1" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" /></label>
+                    )}
+                    {transactionSettings.visibleOptionalFields.description && (
+                      <label className="block sm:col-span-2"><span className="mb-1.5 block text-[10px] font-bold">Description</span><input name="title" placeholder="Short description" className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" /></label>
+                    )}
+                  </div>
                 </div>
 
                 <div className="pt-1">
@@ -687,6 +662,68 @@ function TransactionsPreview() {
                 </div>
               </div>
             </form>
+
+            {showFieldSettings && (
+              <div className="fixed inset-0 z-[110] flex items-center justify-center bg-foreground/30 p-3 backdrop-blur-sm">
+                <div className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Settings</p>
+                      <h4 className="mt-1 text-lg font-extrabold">Transaction fields</h4>
+                      <p className="mt-1 text-xs text-muted-foreground">Required fields always stay visible. Choose which optional fields appear.</p>
+                    </div>
+                    <button type="button" onClick={() => setShowFieldSettings(false)} className="grid size-8 place-items-center rounded-lg hover:bg-muted"><X className="size-4" /></button>
+                  </div>
+
+                  <div className="mt-4 flex gap-2">
+                    <button type="button" onClick={() => {
+                      const next = { ...transactionSettings, visibleOptionalFields: Object.fromEntries(Object.keys(transactionSettings.visibleOptionalFields).map((key) => [key, true])) as TransactionSettings['visibleOptionalFields'] };
+                      setTransactionSettings(next);
+                      saveTransactionSettings(next);
+                    }} className="rounded-lg border border-border px-3 py-2 text-[10px] font-bold">Show all</button>
+                    <button type="button" onClick={() => {
+                      const next = { ...transactionSettings, visibleOptionalFields: Object.fromEntries(Object.keys(transactionSettings.visibleOptionalFields).map((key) => [key, false])) as TransactionSettings['visibleOptionalFields'] };
+                      setTransactionSettings(next);
+                      saveTransactionSettings(next);
+                    }} className="rounded-lg border border-border px-3 py-2 text-[10px] font-bold">Hide all optional</button>
+                  </div>
+
+                  <div className="mt-4 divide-y divide-border rounded-xl border border-border">
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <span className="text-xs font-bold">Account</span><span className="text-[10px] font-bold text-primary">Required</span>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <span className="text-xs font-bold">Amount</span><span className="text-[10px] font-bold text-primary">Required</span>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <span className="text-xs font-bold">Currency</span><span className="text-[10px] font-bold text-primary">Required</span>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <span className="text-xs font-bold">Date</span><span className="text-[10px] font-bold text-primary">Required</span>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <span className="text-xs font-bold">Category</span><span className="text-[10px] font-bold text-primary">Required</span>
+                    </div>
+                    {Object.entries(transactionSettings.visibleOptionalFields).map(([key, enabled]) => (
+                      <label key={key} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                        <span className="text-xs font-semibold">{TRANSACTION_FIELD_LABELS[key as TransactionFieldKey]}</span>
+                        <input type="checkbox" checked={enabled} onChange={(event) => {
+                          const next = {
+                            ...transactionSettings,
+                            visibleOptionalFields: {
+                              ...transactionSettings.visibleOptionalFields,
+                              [key]: event.target.checked,
+                            },
+                          };
+                          setTransactionSettings(next);
+                          saveTransactionSettings(next);
+                        }} />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {showCategoryManager && (
               <div className="fixed inset-0 z-[100] flex items-end justify-center bg-foreground/30 p-3 sm:items-center">
@@ -700,7 +737,7 @@ function TransactionsPreview() {
                     <button type="button" onClick={addCategory} className="h-10 rounded-lg bg-primary px-3 text-xs font-bold text-primary-foreground">Add</button>
                   </div>
                   <div className="mt-3 flex max-h-52 flex-wrap gap-2 overflow-y-auto">
-                    {categories.map((category) => (
+                    {expenseCategoryOptions.map((category) => (
                       <button key={category} type="button" onClick={() => setCategories((items) => items.filter((item) => item !== category))} className="rounded-full border border-border px-3 py-1.5 text-[10px] font-semibold hover:border-destructive hover:text-destructive">
                         {category} ×
                       </button>
