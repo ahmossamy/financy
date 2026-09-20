@@ -15,6 +15,7 @@ import {
   Menu,
   MoreHorizontal,
   PieChart,
+  LineChart,
   Plus,
   Search,
   Settings,
@@ -30,12 +31,13 @@ import {
   type TransactionSettings,
 } from '@/lib/transaction-settings';
 
-type Screen = 'overview' | 'accounts' | 'transactions' | 'calendar' | 'budgets' | 'reports';
+type Screen = 'overview' | 'accounts' | 'transactions' | 'investments' | 'calendar' | 'budgets' | 'reports';
 
 const screens: Array<{ id: Screen; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'accounts', label: 'Accounts', icon: WalletCards },
   { id: 'transactions', label: 'Transactions', icon: FileText },
+  { id: 'investments', label: 'Investments', icon: LineChart },
   { id: 'calendar', label: 'Calendar', icon: CalendarDays },
   { id: 'budgets', label: 'Budgets', icon: PieChart },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
@@ -1249,7 +1251,14 @@ function AccountsPreview() {
 }
 
 export default function MoneyProPreview() {
-  const [screen, setScreen] = useState<Screen>('overview');
+  const initialScreen = (() => {
+    if (typeof window === 'undefined') return 'overview' as Screen;
+    const value = new URLSearchParams(window.location.search).get('screen');
+    return ['overview', 'accounts', 'transactions', 'investments', 'calendar', 'budgets', 'reports'].includes(value ?? '')
+      ? value as Screen
+      : 'overview';
+  })();
+  const [screen, setScreen] = useState<Screen>(initialScreen);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
 
@@ -1430,6 +1439,17 @@ export default function MoneyProPreview() {
 
             {screen === 'transactions' && (
               <TransactionsPreview />
+            )}
+
+            {screen === 'investments' && (
+              <section className="space-y-5">
+                <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Investments</p><h2 className="mt-1 font-display text-3xl font-extrabold">Investments</h2><p className="mt-1 text-sm text-muted-foreground">Portfolios, platforms, assets and investment activity.</p></div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Card className="p-5"><p className="text-xs text-muted-foreground">Portfolios</p><p className="mt-2 text-2xl font-extrabold">0</p></Card>
+                  <Card className="p-5"><p className="text-xs text-muted-foreground">Platforms</p><p className="mt-2 text-2xl font-extrabold">0</p></Card>
+                  <Card className="p-5"><p className="text-xs text-muted-foreground">Investment value</p><p className="mt-2 text-2xl font-extrabold">{money(0)}</p></Card>
+                </div>
+              </section>
             )}
 
             {screen === 'calendar' && (
