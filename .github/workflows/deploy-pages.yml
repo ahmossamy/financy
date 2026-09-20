@@ -42,6 +42,8 @@ jobs:
         env:
           PORT: 4173
           BASE_PATH: /financy/
+          VITE_SUPABASE_URL: https://qjknubujqebzcbahpfjb.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
 
       - name: Support client-side routes
         run: cp artifacts/financy/dist/public/index.html artifacts/financy/dist/public/404.html
