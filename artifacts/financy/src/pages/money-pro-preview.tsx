@@ -153,6 +153,7 @@ function TransactionsPreview() {
 
   const accounts = Array.from(new Set(rows.map((row) => row.account)));
   const classes = Array.from(new Set(rows.map((row) => row.className ?? 'Personal')));
+  const itemTotal = lineItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
   function transactionDate(value: string) {
     return new Date(value + ' 2026');
@@ -255,10 +256,10 @@ function TransactionsPreview() {
   function addTransaction(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const amount = lineItems.reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0);
-    if (amount <= 0) return;
-
     const selectedMode = entryMode;
+    const enteredAmount = Math.abs(Number(form.get('amount') || 0));
+    const amount = selectedMode === 'expense' ? itemTotal : enteredAmount;
+    if (amount <= 0) return;
     const plannedType = String(form.get('plannedType') || 'expense') as 'expense' | 'income';
     const type = (selectedMode === 'planned' ? plannedType : selectedMode) as TransactionRecord['type'];
     const account = String(form.get('account') || 'CIB');
@@ -269,8 +270,14 @@ function TransactionsPreview() {
     const receivedAmount = Math.abs(Number(form.get('receivedAmount') || amount));
     const title = lineItems.length > 1
       ? lineItems.filter((item) => item.name.trim()).map((item) => item.name.trim()).join(', ') || (type === 'income' ? 'Income' : type === 'transfer' ? 'Transfer' : 'Expense')
-      : lineItems[0]?.name.trim() || lineItems[0]?.category || 'Transaction';
-    const category = lineItems.length > 1 ? 'Multiple items' : lineItems[0]?.category || 'Other';
+      : lineItems[0]?.name.trim() || lineItems[0]?.category || (type === 'income' ? 'Income' : type === 'transfer' ? 'Transfer' : 'Transaction');
+    const category = selectedMode === 'income'
+      ? String(form.get('incomeCategory') || 'Other')
+      : selectedMode === 'transfer'
+        ? 'Transfer'
+        : selectedMode === 'planned'
+          ? String(form.get('plannedCategory') || 'Other')
+          : lineItems.length > 1 ? 'Multiple items' : lineItems[0]?.category || 'Other';
     const date = String(form.get('date') || '2026-09-20');
     const status = selectedMode === 'planned'
       ? 'planned'
@@ -499,8 +506,8 @@ function TransactionsPreview() {
                           <p className="mt-1 text-3xl font-extrabold">EGP</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-4xl font-extrabold tracking-tight">{money(amount)}</p>
-                          <input type="hidden" name="amount" value={amount} />
+                          <p className="text-4xl font-extrabold tracking-tight">{money(itemTotal)}</p>
+                          <input type="hidden" name="amount" value={itemTotal} />
                         </div>
                       </div>
                     </div>
@@ -572,8 +579,7 @@ function TransactionsPreview() {
                       </div>
                       <div className="flex items-center justify-between gap-4 px-5 py-5">
                         <div><p className="text-xs text-muted-foreground">Income amount</p><p className="mt-1 text-3xl font-extrabold">EGP</p></div>
-                        <p className="text-4xl font-extrabold">{money(amount)}</p>
-                        <input type="hidden" name="amount" value={amount} />
+                        <input name="amount" type="number" min="0" step="0.01" required placeholder="0.00" className="w-full max-w-[62%] bg-transparent text-right text-4xl font-extrabold outline-none" />
                       </div>
                     </div>
 
@@ -627,6 +633,7 @@ function TransactionsPreview() {
                     <div className="grid gap-3 p-4 sm:grid-cols-2">
                       <label className="block sm:col-span-2"><span className="mb-2 block text-xs font-bold">Type</span><select name="plannedType" className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"><option value="expense">Planned expense</option><option value="income">Planned income</option></select></label>
                       <label className="block"><span className="mb-2 block text-xs font-bold">Account</span><select name="account" className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select></label>
+                      <label className="block"><span className="mb-2 block text-xs font-bold">Category</span><select name="plannedCategory" className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm">{categories.map((category) => <option key={category}>{category}</option>)}</select></label>
                       <label className="block"><span className="mb-2 block text-xs font-bold">Amount</span><input name="amount" type="number" min="0" step="0.01" required placeholder="0.00" className="h-11 w-full rounded-xl border border-border bg-background px-3 text-right text-lg font-extrabold" /></label>
                     </div>
                   </div>
