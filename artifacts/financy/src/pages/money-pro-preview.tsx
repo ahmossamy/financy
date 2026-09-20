@@ -164,6 +164,21 @@ function AccountsPreview() {
     return result;
   }, [selectedAccount, accountTransactions]);
 
+  function openAccountDetails(account: (typeof accountRows)[number]) {
+    setSelectedAccount(account);
+    setTransactionFilter('all');
+    setTransactionPeriod('month');
+    setTransactionFrom('');
+    setTransactionTo('');
+    setSelectedTransaction(null);
+    setAccountTransactions(
+      transactionRows.filter((transaction) =>
+        transaction.account.toLowerCase().includes(account.name.toLowerCase()) ||
+        account.name.toLowerCase().includes(transaction.account.toLowerCase().split(' ')[0]),
+      ),
+    );
+  }
+
   function submitAccount(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
