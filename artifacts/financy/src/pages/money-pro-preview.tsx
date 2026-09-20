@@ -1282,17 +1282,28 @@ export default function MoneyProPreview() {
     let cancelled = false;
     async function loadCalendarData() {
       setCalendarLoading(true);
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
-        if (!cancelled) {
-          setCalendarConnected(false);
-          setCalendarLoading(false);
-          setCalendarEvents([]);
+      try {
+        const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+        if (!publishableKey || publishableKey === 'missing-publishable-key') {
+          if (!cancelled) {
+            setCalendarConnected(false);
+            setCalendarEvents([]);
+            setCalendarLoading(false);
+          }
+          return;
         }
-        return;
-      }
 
-      const start = new Date(2026, 8 + monthOffset, 1);
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData.session) {
+          if (!cancelled) {
+            setCalendarConnected(false);
+            setCalendarLoading(false);
+            setCalendarEvents([]);
+          }
+          return;
+        }
+
+        const start = new Date(2026, 8 + monthOffset, 1);
       const end = new Date(2026, 9 + monthOffset, 0);
       const from = start.toISOString().slice(0, 10);
       const to = end.toISOString().slice(0, 10);
@@ -1418,9 +1429,16 @@ export default function MoneyProPreview() {
         });
       }
 
-      setCalendarConnected(true);
-      setCalendarEvents(events);
-      setCalendarLoading(false);
+        setCalendarConnected(true);
+        setCalendarEvents(events);
+        setCalendarLoading(false);
+      } catch {
+        if (!cancelled) {
+          setCalendarConnected(false);
+          setCalendarEvents([]);
+          setCalendarLoading(false);
+        }
+      }
     }
     void loadCalendarData();
     return () => { cancelled = true; };
