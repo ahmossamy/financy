@@ -472,21 +472,13 @@ function TransactionsPreview() {
                                 <option value="">Choose item {index + 1}</option>
                                 {transactionSettings.expenseItems.map((configuredItem) => {
                                   const configuredCategory = expenseCategories.find((category) => category.id === configuredItem.categoryId);
-                                  return <option key={configuredItem.id} value={configuredItem.id}>{configuredCategory ? configuredCategory.name + ' > ' : ''}{configuredItem.name}</option>;
+                                  return <option key={configuredItem.id} value={configuredItem.id}>{configuredItem.name}</option>;
                                 })}
                               </select>
                             <input value={item.amount || ''} onChange={(event) => updateLineItem(item.id, { amount: Number(event.target.value) || 0 })} type="number" min="0" step="0.01" placeholder="0.00" className="h-10 rounded-lg border border-border bg-background px-2 text-right text-sm font-bold" />
                             {lineItems.length > 1 ? <button type="button" onClick={() => removeLineItem(item.id)} className="grid size-10 place-items-center rounded-lg border border-border text-muted-foreground hover:text-destructive">×</button> : <span />}
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex min-w-0 flex-1 items-center rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs font-semibold text-muted-foreground">
-                              {(() => {
-                                const configured = transactionSettings.expenseItems.find((entry) => entry.id === item.itemId);
-                                const configuredCategory = expenseCategories.find((category) => category.id === configured?.categoryId);
-                                return configuredCategory ? configuredCategory.name : item.category;
-                              })()}
-                            </span>
-                          </div>
+
                         </div>
                       ))}
                     </div>
