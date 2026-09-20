@@ -12,6 +12,7 @@ import {
   FileText,
   LayoutDashboard,
   Menu,
+  MoreHorizontal,
   PieChart,
   Plus,
   Search,
