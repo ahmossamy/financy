@@ -1261,6 +1261,7 @@ export default function MoneyProPreview() {
   const [screen, setScreen] = useState<Screen>(initialScreen);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<number | null>(20);
 
   const monthLabel = useMemo(() => {
     const d = new Date();
@@ -1454,19 +1455,135 @@ export default function MoneyProPreview() {
 
             {screen === 'calendar' && (
               <section className="space-y-5">
-                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-                  <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Bill planning</p><h2 className="mt-1 font-display text-3xl font-extrabold">Calendar</h2><p className="mt-1 text-sm text-muted-foreground">Recurring bills and scheduled transactions.</p></div>
-                  <div className="flex items-center gap-2"><button onClick={() => setMonthOffset((v) => v - 1)} className="grid size-9 place-items-center rounded-xl border border-border"><ChevronLeft className="size-4" /></button><div className="min-w-36 text-center text-sm font-bold">{monthLabel}</div><button onClick={() => setMonthOffset((v) => v + 1)} className="grid size-9 place-items-center rounded-xl border border-border"><ChevronRight className="size-4" /></button></div>
-                </div>
-                <Card className="overflow-hidden p-3 sm:p-5">
-                  <div className="grid grid-cols-7 gap-2 text-center text-[10px] font-bold text-muted-foreground sm:text-[11px]">{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d) => <div key={d} className="py-2">{d}</div>)}</div>
-                  <div className="mt-2 grid grid-cols-7 gap-2">
-                    {Array.from({ length: 35 }, (_, i) => {
-                      const day = i - 2;
-                      return <div key={i} className="min-h-20 rounded-2xl border border-border p-2 text-left sm:min-h-24"><p className="text-xs font-bold">{day > 0 && day <= 30 ? day : ''}</p>{[6, 13, 21, 28].includes(i) && <div className="mt-2 rounded-lg bg-primary/10 px-2 py-1 text-[9px] font-bold text-primary">Electricity</div>}{[10, 25].includes(i) && <div className="mt-1 rounded-lg bg-muted px-2 py-1 text-[9px] font-bold">Salary</div>}</div>;
-                    })}
-                  </div>
-                </Card>
+                {(() => {
+                  const base = new Date();
+                  base.setDate(1);
+                  base.setMonth(base.getMonth() + monthOffset);
+                  const year = base.getFullYear();
+                  const month = base.getMonth();
+                  const daysInMonth = new Date(year, month + 1, 0).getDate();
+                  const firstDay = (new Date(year, month, 1).getDay() + 6) % 7;
+                  const cells = Array.from({ length: Math.ceil((firstDay + daysInMonth) / 7) * 7 }, (_, index) => {
+                    const day = index - firstDay + 1;
+                    return day > 0 && day <= daysInMonth ? day : null;
+                  });
+
+                  const dateTransactions = transactionRows.filter((row) => {
+                    const match = row.date.match(/(\d{1,2})\s+([A-Za-z]{3})/);
+                    if (!match) return false;
+                    const rowDate = new Date(Date.parse(match[1] + ' ' + match[2] + ' 2026'));
+                    return rowDate.getFullYear() === year && rowDate.getMonth() === month;
+                  });
+
+                  const transactionsForDay = (day: number) =>
+                    dateTransactions.filter((row) => {
+                      const match = row.date.match(/(\d{1,2})\s+/);
+                      return match && Number(match[1]) === day;
+                    });
+
+                  const selectedTransactions = selectedCalendarDate ? transactionsForDay(selectedCalendarDate) : [];
+                  const monthIncome = dateTransactions.filter((row) => row.type === 'income').reduce((sum, row) => sum + row.amount, 0);
+                  const monthExpenses = dateTransactions.filter((row) => row.type === 'expense').reduce((sum, row) => sum + Math.abs(row.amount), 0);
+                  const monthTransfers = dateTransactions.filter((row) => row.type === 'transfer').reduce((sum, row) => sum + Math.abs(row.amount), 0);
+
+                  return (
+                    <>
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Money calendar</p>
+                          <h2 className="mt-1 font-display text-3xl font-extrabold">Calendar</h2>
+                          <p className="mt-1 text-sm text-muted-foreground">See income, expenses, transfers and planned transactions by date.</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => setMonthOffset((value) => value - 1)} className="grid size-10 place-items-center rounded-xl border border-border hover:bg-muted"><ChevronLeft className="size-4" /></button>
+                          <button type="button" onClick={() => { setMonthOffset(0); setSelectedCalendarDate(new Date().getDate()); }} className="h-10 rounded-xl border border-border px-3 text-xs font-bold">Today</button>
+                          <div className="min-w-36 text-center text-sm font-extrabold">{monthLabel}</div>
+                          <button type="button" onClick={() => setMonthOffset((value) => value + 1)} className="grid size-10 place-items-center rounded-xl border border-border hover:bg-muted"><ChevronRight className="size-4" /></button>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <Card className="p-4"><p className="text-[11px] font-bold text-muted-foreground">Income</p><p className="mt-1 text-xl font-extrabold text-primary">{money(monthIncome)}</p></Card>
+                        <Card className="p-4"><p className="text-[11px] font-bold text-muted-foreground">Expenses</p><p className="mt-1 text-xl font-extrabold text-destructive">{money(monthExpenses)}</p></Card>
+                        <Card className="p-4"><p className="text-[11px] font-bold text-muted-foreground">Transfers</p><p className="mt-1 text-xl font-extrabold">{money(monthTransfers)}</p></Card>
+                      </div>
+
+                      <Card className="overflow-hidden">
+                        <div className="grid grid-cols-7 border-b border-border bg-muted/30">
+                          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+                            <div key={day} className="py-3 text-center text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{day}</div>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-7">
+                          {cells.map((day, index) => {
+                            const dayRows = day ? transactionsForDay(day) : [];
+                            const income = dayRows.filter((row) => row.type === 'income').reduce((sum, row) => sum + row.amount, 0);
+                            const expense = dayRows.filter((row) => row.type === 'expense').reduce((sum, row) => sum + Math.abs(row.amount), 0);
+                            const isToday = day === new Date().getDate() && monthOffset === 0 && month === new Date().getMonth() && year === new Date().getFullYear();
+                            const isSelected = day === selectedCalendarDate;
+                            return (
+                              <button
+                                key={index}
+                                type="button"
+                                disabled={!day}
+                                onClick={() => day && setSelectedCalendarDate(day)}
+                                className={'min-h-24 border-b border-r border-border p-2 text-left transition-colors sm:min-h-28 ' + (!day ? 'bg-muted/10' : isSelected ? 'bg-primary/[0.08]' : 'hover:bg-muted/50')}
+                              >
+                                {day && (
+                                  <>
+                                    <div className="flex items-center justify-between">
+                                      <span className={'grid size-7 place-items-center rounded-full text-xs font-bold ' + (isToday ? 'bg-primary text-primary-foreground' : '')}>{day}</span>
+                                      {dayRows.length > 0 && <span className="text-[9px] font-bold text-muted-foreground">{dayRows.length}</span>}
+                                    </div>
+                                    <div className="mt-2 space-y-1">
+                                      {income > 0 && <p className="truncate rounded-md bg-primary/10 px-1.5 py-1 text-[9px] font-bold text-primary">+{money(income)}</p>}
+                                      {expense > 0 && <p className="truncate rounded-md bg-destructive/10 px-1.5 py-1 text-[9px] font-bold text-destructive">-{money(expense)}</p>}
+                                      {dayRows.some((row) => row.type === 'transfer') && <p className="truncate rounded-md bg-blue-500/10 px-1.5 py-1 text-[9px] font-bold text-blue-600">Transfer</p>}
+                                    </div>
+                                  </>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </Card>
+
+                      <Card className="p-5">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-[0.12em] text-primary">Selected day</p>
+                            <h3 className="mt-1 font-display text-xl font-extrabold">{selectedCalendarDate ? selectedCalendarDate + ' ' + new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(base) : 'Choose a day'}</h3>
+                          </div>
+                          <span className="text-xs font-semibold text-muted-foreground">{selectedTransactions.length} transaction{selectedTransactions.length === 1 ? '' : 's'}</span>
+                        </div>
+
+                        {selectedTransactions.length > 0 ? (
+                          <div className="mt-4 divide-y divide-border">
+                            {selectedTransactions.map((row) => (
+                              <button key={row.date + row.title} type="button" onClick={() => setSelected({ ...row, id: 'calendar-' + row.date + row.title, status: 'cleared', description: row.title, currency: accountRows.find((account) => account.name === row.account)?.currency ?? 'EGP' })} className="flex w-full items-center gap-3 py-3 text-left hover:bg-muted/40">
+                                <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-muted">
+                                  {row.type === 'income' && <ArrowDownLeft className="size-4 text-primary" />}
+                                  {row.type === 'expense' && <ArrowUpRight className="size-4" />}
+                                  {row.type === 'transfer' && <ArrowLeftRight className="size-4 text-primary" />}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-bold">{row.title}</p>
+                                  <p className="mt-1 truncate text-[11px] text-muted-foreground">{row.account} · {row.category}</p>
+                                </div>
+                                <span className={'text-sm font-extrabold ' + (row.amount >= 0 ? 'text-primary' : 'text-destructive')}>{row.amount >= 0 ? '+' : ''}{money(row.amount, accountRows.find((account) => account.name === row.account)?.currency ?? 'EGP')}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="mt-4 rounded-2xl border border-dashed border-border p-6 text-center">
+                            <p className="text-sm font-bold">No transactions</p>
+                            <p className="mt-1 text-xs text-muted-foreground">There are no recorded transactions for this day.</p>
+                          </div>
+                        )}
+                      </Card>
+                    </>
+                  );
+                })()}
               </section>
             )}
 
