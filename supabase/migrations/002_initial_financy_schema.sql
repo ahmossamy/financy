@@ -318,7 +318,6 @@ create table public.receivables (
   status text not null default 'open',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint receivables_received_amount_check check (amount_received <= amount_due),
   constraint receivables_status_check check (status in ('open', 'partially_paid', 'paid', 'cancelled'))
 );
 
@@ -336,8 +335,6 @@ create table public.liabilities (
   status text not null default 'open',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint liabilities_outstanding_amount_check
-    check (outstanding_amount <= principal_amount),
   constraint liabilities_status_check check (status in ('open', 'partially_paid', 'paid', 'cancelled'))
 );
 
@@ -358,8 +355,6 @@ create table public.loans (
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint loans_outstanding_amount_check
-    check (outstanding_amount <= principal_amount),
   constraint loans_date_range_check check (end_date is null or end_date >= start_date),
   constraint loans_status_check check (status in ('active', 'paid', 'defaulted', 'cancelled'))
 );
@@ -404,7 +399,6 @@ create table public.installments (
     (loan_id is not null and liability_id is null)
     or (loan_id is null and liability_id is not null)
   ),
-  constraint installments_paid_amount_check check (paid_amount <= amount),
   constraint installments_status_check check (status in ('pending', 'partially_paid', 'paid', 'overdue', 'cancelled'))
 );
 
@@ -463,7 +457,6 @@ create table public.goals (
   status text not null default 'active',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint goals_current_amount_check check (current_amount <= target_amount),
   constraint goals_status_check check (status in ('active', 'completed', 'paused', 'cancelled'))
 );
 
