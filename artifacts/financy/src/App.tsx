@@ -2057,6 +2057,16 @@ function Router({
   onLogout: () => void;
   userEmail?: string;
 }) {
+  const [location] = useLocation();
+
+  if (location === '/' || location === '/dashboard' || location === '/pro') {
+    return (
+      <ErrorBoundary>
+        <MoneyProPreview />
+      </ErrorBoundary>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <AppShell
