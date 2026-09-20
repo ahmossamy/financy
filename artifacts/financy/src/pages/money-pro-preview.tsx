@@ -146,6 +146,8 @@ function TransactionsPreview() {
   const [lineItems, setLineItems] = useState<LineItem[]>([
     { id: 'item-1', name: '', category: 'Food & Dining', amount: 0 },
   ]);
+  const itemTotal = lineItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [newCategory, setNewCategory] = useState('');
   const [showCategoryManager, setShowCategoryManager] = useState(false);
@@ -153,7 +155,6 @@ function TransactionsPreview() {
 
   const accounts = Array.from(new Set(rows.map((row) => row.account)));
   const classes = Array.from(new Set(rows.map((row) => row.className ?? 'Personal')));
-  const itemTotal = lineItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
   function transactionDate(value: string) {
     return new Date(value + ' 2026');
