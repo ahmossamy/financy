@@ -23,6 +23,12 @@ export type CategoryItem = {
   parentId: string | null;
 };
 
+export type ExpenseItem = {
+  id: string;
+  name: string;
+  categoryId: string;
+};
+
 export type TransactionSettings = {
   visibleOptionalFields: Record<TransactionFieldKey, boolean>;
   expenseCategories: CategoryItem[];
@@ -32,6 +38,7 @@ export type TransactionSettings = {
   tags: string[];
   paymentMethods: string[];
   payees: string[];
+  expenseItems: ExpenseItem[];
 };
 
 export const REQUIRED_TRANSACTION_FIELDS = [
@@ -113,6 +120,16 @@ export const DEFAULT_TRANSACTION_SETTINGS: TransactionSettings = {
   tags: ['Family', 'Needs', 'Wants'],
   paymentMethods: ['Cash', 'Debit Card', 'Credit Card', 'Bank Transfer', 'E-Wallet'],
   payees: ['Carrefour', 'Amazon', 'Electricity', 'Google', 'Apple', 'Microsoft', 'Canva'],
+  expenseItems: [
+    { id: 'item-milk', name: 'Milk', categoryId: 'exp-groceries' },
+    { id: 'item-eggs', name: 'Eggs', categoryId: 'exp-groceries' },
+    { id: 'item-bread', name: 'Bread', categoryId: 'exp-groceries' },
+    { id: 'item-meat', name: 'Meat', categoryId: 'exp-groceries' },
+    { id: 'item-electricity', name: 'Electricity Bill', categoryId: 'exp-electricity' },
+    { id: 'item-internet', name: 'Internet Bill', categoryId: 'exp-internet' },
+    { id: 'item-fuel', name: 'Fuel', categoryId: 'exp-fuel' },
+    { id: 'item-medicine', name: 'Medicine', categoryId: 'exp-health' },
+  ],
 };
 
 const STORAGE_KEY = 'financy-transaction-settings-v1';
@@ -144,6 +161,7 @@ export function loadTransactionSettings(): TransactionSettings {
       tags: parsed.tags ?? cloneDefaults().tags,
       paymentMethods: parsed.paymentMethods?.length ? parsed.paymentMethods : cloneDefaults().paymentMethods,
       payees: parsed.payees ?? cloneDefaults().payees,
+      expenseItems: parsed.expenseItems ?? cloneDefaults().expenseItems,
     };
   } catch {
     return cloneDefaults();
