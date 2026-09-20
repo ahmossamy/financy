@@ -394,8 +394,9 @@ export default function Transactions({
     if (transaction.type === 'transfer' && transaction.transfer_id) {
       const { data: transfer, error: transferError } = await supabase
         .from('transfers')
-        .select('id, from_account_id, to_account_id, amount, currency_code, received_amount, exchange_rate, fee, transfer_date, notes')
+        .select('id, from_account_id, to_account_id, amount, currency_code, received_amount, exchange_rate, fee, fee_transaction_id, transfer_date, notes')
         .eq('id', transaction.transfer_id)
+        .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
         .single();
 
       if (transferError || !transfer) {
@@ -465,6 +466,7 @@ export default function Transactions({
 
     const fromAccount = accounts.find((item) => item.id === transferForm.from_account_id);
     const toAccount = accounts.find((item) => item.id === transferForm.to_account_id);
+
     if (!fromAccount || !toAccount) {
       setError('Please select valid source and destination accounts.');
       return;
@@ -479,16 +481,26 @@ export default function Transactions({
       setError('Amount to send must be greater than zero.');
       return;
     }
+
     if (!Number.isFinite(receivedAmount) || receivedAmount <= 0) {
       setError('Amount to receive must be greater than zero.');
       return;
     }
+
     if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
       setError('Exchange rate must be greater than zero.');
       return;
     }
+
     if (!Number.isFinite(fee) || fee < 0) {
       setError('Transfer fee cannot be negative.');
+      return;
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      setError('Your session has expired. Please sign in again.');
       return;
     }
 
@@ -496,39 +508,232 @@ export default function Transactions({
     setError('');
 
     const notes = [
-      transferForm.tag.trim() ? '[Tag: ' + transferForm.tag.trim() + ']' : '',
+      transferForm.tag.trim() ? `[Tag: ${transferForm.tag.trim()}]` : '',
       transferForm.notes.trim(),
-    ].filter(Boolean).join('\\n') || null;
+    ].filter(Boolean).join('\n') || null;
 
-    const rpcArgs = {
-      p_from_account_id: transferForm.from_account_id,
-      p_to_account_id: transferForm.to_account_id,
-      p_amount: sentAmount,
-      p_received_amount: receivedAmount,
-      p_exchange_rate: exchangeRate,
-      p_fee: fee,
-      p_transfer_date: transferForm.transaction_date,
-      p_notes: notes,
-      p_tag: transferForm.tag.trim() || null,
+    const transferPayload = {
+      user_id: user.id,
+      from_account_id: transferForm.from_account_id,
+      to_account_id: transferForm.to_account_id,
+      amount: sentAmount,
+      currency_code: fromAccount.currency_code,
+      received_amount: receivedAmount,
+      exchange_rate: exchangeRate,
+      fee,
+      transfer_date: transferForm.transaction_date,
+      notes,
+      status: 'completed',
     };
 
-    const { error: transferError } = editingTransaction?.transfer_id
-      ? await supabase.rpc('financy_update_transfer', {
-          p_transfer_id: editingTransaction.transfer_id,
-          ...rpcArgs,
-        })
-      : await supabase.rpc('financy_create_transfer', rpcArgs);
+    try {
+      let transferId = editingTransaction?.transfer_id ?? null;
+      let previousFeeTransactionId: string | null = null;
 
-    if (transferError) {
-      setError(transferError.message);
+      if (editingTransaction?.transfer_id) {
+        const { data: existingTransfer, error: existingTransferError } = await supabase
+          .from('transfers')
+          .select('id, from_account_id, to_account_id, fee_transaction_id')
+          .eq('id', editingTransaction.transfer_id)
+          .eq('user_id', user.id)
+          .single();
+
+        if (existingTransferError || !existingTransfer) {
+          throw new Error(existingTransferError?.message || 'Unable to load the existing transfer.');
+        }
+
+        previousFeeTransactionId = existingTransfer.fee_transaction_id;
+
+        const { data: transferRows, error: transferRowsError } = await supabase
+          .from('transactions')
+          .select('id, account_id')
+          .eq('transfer_id', editingTransaction.transfer_id)
+          .eq('user_id', user.id);
+
+        if (transferRowsError) {
+          throw new Error(transferRowsError.message);
+        }
+
+        const sourceRow = (transferRows ?? []).find(
+          (row) => row.account_id === existingTransfer.from_account_id,
+        );
+        const destinationRow = (transferRows ?? []).find(
+          (row) => row.account_id === existingTransfer.to_account_id,
+        );
+
+        if (!sourceRow || !destinationRow) {
+          throw new Error('The transfer is missing its source or destination transaction.');
+        }
+
+        const { error: sourceUpdateError } = await supabase
+          .from('transactions')
+          .update({
+            account_id: transferForm.from_account_id,
+            amount: sentAmount,
+            currency_code: fromAccount.currency_code,
+            transaction_date: transferForm.transaction_date,
+            notes,
+            status: 'completed',
+          })
+          .eq('id', sourceRow.id)
+          .eq('user_id', user.id);
+
+        if (sourceUpdateError) {
+          throw new Error(sourceUpdateError.message);
+        }
+
+        const { error: destinationUpdateError } = await supabase
+          .from('transactions')
+          .update({
+            account_id: transferForm.to_account_id,
+            amount: receivedAmount,
+            currency_code: toAccount.currency_code,
+            transaction_date: transferForm.transaction_date,
+            notes,
+            status: 'completed',
+          })
+          .eq('id', destinationRow.id)
+          .eq('user_id', user.id);
+
+        if (destinationUpdateError) {
+          throw new Error(destinationUpdateError.message);
+        }
+
+        const { error: transferUpdateError } = await supabase
+          .from('transfers')
+          .update(transferPayload)
+          .eq('id', editingTransaction.transfer_id)
+          .eq('user_id', user.id);
+
+        if (transferUpdateError) {
+          throw new Error(transferUpdateError.message);
+        }
+
+        if (previousFeeTransactionId) {
+          const { error: oldFeeDeleteError } = await supabase
+            .from('transactions')
+            .delete()
+            .eq('id', previousFeeTransactionId)
+            .eq('user_id', user.id);
+
+          if (oldFeeDeleteError) {
+            throw new Error(oldFeeDeleteError.message);
+          }
+        }
+      } else {
+        const { data: transfer, error: transferError } = await supabase
+          .from('transfers')
+          .insert(transferPayload)
+          .select('id')
+          .single();
+
+        if (transferError || !transfer) {
+          throw new Error(transferError?.message || 'Unable to create transfer.');
+        }
+
+        transferId = transfer.id;
+
+        const sourceTransaction = {
+          user_id: user.id,
+          account_id: transferForm.from_account_id,
+          category_id: null,
+          type: 'transfer',
+          amount: sentAmount,
+          currency_code: fromAccount.currency_code,
+          transaction_date: transferForm.transaction_date,
+          description: 'Transfer',
+          notes,
+          status: 'completed',
+          transfer_id: transfer.id,
+        };
+
+        const destinationTransaction = {
+          user_id: user.id,
+          account_id: transferForm.to_account_id,
+          category_id: null,
+          type: 'transfer',
+          amount: receivedAmount,
+          currency_code: toAccount.currency_code,
+          transaction_date: transferForm.transaction_date,
+          description: 'Transfer',
+          notes,
+          status: 'completed',
+          transfer_id: transfer.id,
+        };
+
+        const { error: txError } = await supabase
+          .from('transactions')
+          .insert([sourceTransaction, destinationTransaction]);
+
+        if (txError) {
+          await supabase.from('transfers').delete().eq('id', transfer.id).eq('user_id', user.id);
+          throw new Error(txError.message);
+        }
+      }
+
+      if (fee > 0 && transferId) {
+        const feeTransaction = {
+          user_id: user.id,
+          account_id: transferForm.from_account_id,
+          category_id: null,
+          type: 'expense',
+          amount: fee,
+          currency_code: fromAccount.currency_code,
+          transaction_date: transferForm.transaction_date,
+          description: 'Transfer Fee',
+          notes,
+          status: 'completed',
+          transfer_id: null,
+        };
+
+        const { data: feeRow, error: feeError } = await supabase
+          .from('transactions')
+          .insert(feeTransaction)
+          .select('id')
+          .single();
+
+        if (feeError || !feeRow) {
+          if (!editingTransaction?.transfer_id) {
+            await supabase.from('transactions').delete().eq('transfer_id', transferId).eq('user_id', user.id);
+            await supabase.from('transfers').delete().eq('id', transferId).eq('user_id', user.id);
+          }
+          throw new Error(feeError?.message || 'Unable to record the transfer fee.');
+        }
+
+        const { error: feeLinkError } = await supabase
+          .from('transfers')
+          .update({ fee_transaction_id: feeRow.id })
+          .eq('id', transferId)
+          .eq('user_id', user.id);
+
+        if (feeLinkError) {
+          await supabase.from('transactions').delete().eq('id', feeRow.id).eq('user_id', user.id);
+          if (!editingTransaction?.transfer_id) {
+            await supabase.from('transactions').delete().eq('transfer_id', transferId).eq('user_id', user.id);
+            await supabase.from('transfers').delete().eq('id', transferId).eq('user_id', user.id);
+          }
+          throw new Error(feeLinkError.message);
+        }
+      } else if (transferId) {
+        const { error: clearFeeLinkError } = await supabase
+          .from('transfers')
+          .update({ fee_transaction_id: null })
+          .eq('id', transferId)
+          .eq('user_id', user.id);
+
+        if (clearFeeLinkError) {
+          throw new Error(clearFeeLinkError.message);
+        }
+      }
+
       setSaving(false);
-      return;
+      setModalOpen(false);
+      setEditingTransaction(null);
+      await loadData();
+    } catch (transferError) {
+      setError(transferError instanceof Error ? transferError.message : 'Unable to save transfer.');
+      setSaving(false);
     }
-
-    setSaving(false);
-    setModalOpen(false);
-    setEditingTransaction(null);
-    await loadData();
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -606,33 +811,71 @@ export default function Transactions({
   }
 
   async function deleteTransaction(transaction: Transaction) {
-    const label = transaction.transfer_id ? 'this transfer' : '"' + (transaction.description || transaction.type) + '"';
+    const label = transaction.transfer_id
+      ? 'this transfer'
+      : '"' + (transaction.description || transaction.type) + '"';
+
     const confirmed = window.confirm('Delete ' + label + '?');
     if (!confirmed) return;
 
     setError('');
 
-    if (transaction.transfer_id) {
-      const { error: deleteTransferError } = await supabase.rpc(
-        'financy_delete_transfer',
-        { p_transfer_id: transaction.transfer_id },
-      );
+    const { data: { user } } = await supabase.auth.getUser();
 
-      if (deleteTransferError) {
-        setError(deleteTransferError.message);
+    if (!user) {
+      setError('Your session has expired. Please sign in again.');
+      return;
+    }
+
+    if (transaction.transfer_id) {
+      const { data: transfer, error: transferLoadError } = await supabase
+        .from('transfers')
+        .select('id, fee_transaction_id')
+        .eq('id', transaction.transfer_id)
+        .eq('user_id', user.id)
+        .single();
+
+      if (transferLoadError || !transfer) {
+        setError(transferLoadError?.message || 'Unable to load the transfer.');
+        return;
+      }
+
+      const { error: txDeleteError } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('transfer_id', transaction.transfer_id)
+        .eq('user_id', user.id);
+
+      if (txDeleteError) {
+        setError(txDeleteError.message);
+        return;
+      }
+
+      if (transfer.fee_transaction_id) {
+        const { error: feeDeleteError } = await supabase
+          .from('transactions')
+          .delete()
+          .eq('id', transfer.fee_transaction_id)
+          .eq('user_id', user.id);
+
+        if (feeDeleteError) {
+          setError(feeDeleteError.message);
+          return;
+        }
+      }
+
+      const { error: transferDeleteError } = await supabase
+        .from('transfers')
+        .delete()
+        .eq('id', transaction.transfer_id)
+        .eq('user_id', user.id);
+
+      if (transferDeleteError) {
+        setError(transferDeleteError.message);
         return;
       }
 
       await loadData();
-      return;
-    }
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setError('Your session has expired. Please sign in again.');
       return;
     }
 
@@ -1093,7 +1336,7 @@ export default function Transactions({
                   <label className="block">
                     <span className="mb-2 block text-sm font-bold">Amount to Send *</span>
                     <div className="flex overflow-hidden rounded-2xl border border-border bg-background">
-                      <input type="number" step="0.01" min="0.01" value={transferForm.sent_amount} onChange={e => { const value = e.target.value; setTransferForm(c => ({ ...c, sent_amount: value, received_amount: c.exchange_rate && Number(c.exchange_rate) > 0 ? (Number(value || 0) / Number(c.exchange_rate)).toFixed(2) : c.received_amount })); }} className="h-12 min-w-0 flex-1 bg-transparent px-4 text-base outline-none" placeholder="0.00" required />
+                      <input type="number" step="0.01" min="0.01" value={transferForm.sent_amount} onChange={e => { const value = e.target.value; setTransferForm(c => ({ ...c, sent_amount: value, received_amount: c.exchange_rate && Number(c.exchange_rate) > 0 ? (Number(value || 0) * Number(c.exchange_rate)).toFixed(2) : c.received_amount })); }} className="h-12 min-w-0 flex-1 bg-transparent px-4 text-base outline-none" placeholder="0.00" required />
                       <span className="grid min-w-20 place-items-center border-l border-border px-3 text-xs font-bold">{transferForm.sent_currency}</span>
                     </div>
                   </label>
@@ -1107,8 +1350,8 @@ export default function Transactions({
 
                   <label className="block">
                     <span className="mb-2 block text-sm font-bold">Exchange Rate *</span>
-                    <input type="number" step="0.000001" min="0.000001" value={transferForm.exchange_rate} onChange={e => { const value = e.target.value; setTransferForm(c => ({ ...c, exchange_rate: value, received_amount: value && Number(value) > 0 && c.sent_amount ? (Number(c.sent_amount) / Number(value)).toFixed(2) : c.received_amount })); }} className={inputClass} placeholder="1" required />
-                    <p className="mt-1 text-[11px] text-muted-foreground">{transferForm.sent_currency} per {transferForm.received_currency}</p>
+                    <input type="number" step="0.000001" min="0.000001" value={transferForm.exchange_rate} onChange={e => { const value = e.target.value; setTransferForm(c => ({ ...c, exchange_rate: value, received_amount: value && Number(value) > 0 && c.sent_amount ? (Number(c.sent_amount) * Number(value)).toFixed(2) : c.received_amount })); }} className={inputClass} placeholder="1" required />
+                    <p className="mt-1 text-[11px] text-muted-foreground">1 {transferForm.sent_currency} = X {transferForm.received_currency}</p>
                   </label>
                   <label className="block">
                     <span className="mb-2 block text-sm font-bold">Transfer Fee</span>
