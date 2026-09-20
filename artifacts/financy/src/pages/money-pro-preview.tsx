@@ -223,7 +223,157 @@ function InvestmentsPreview() {
         </div>
       )}
 
-      {tab === 'portfolios' && <Card className="p-5"><div className="flex items-center justify-between"><div><h3 className="font-display text-xl font-extrabold">Portfolios</h3><p className="mt-1 text-xs text-muted-foreground">Separate investment goals and track their value.</p></div><button type="button" className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-bold"><Plus className="size-3.5" /> New portfolio</button></div><div className="mt-5 grid gap-4 md:grid-cols-3">{portfolios.map((row) => <div key={row.name} className="rounded-2xl border border-border p-4"><div className="flex items-center justify-between"><div><p className="font-bold">{row.name}</p><p className="text-[11px] text-muted-foreground">{row.type}</p></div><span className="text-xs font-bold">{row.target}% target</span></div><p className="mt-5 text-2xl font-extrabold">{money(row.value)}</p><div className="mt-4 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{width:Math.min((row.value/currentValue)*100,100)+'%'}} /></div><p className="mt-2 text-[11px] text-muted-foreground">{holdings.filter((holding) => holding.portfolio === row.name).length} holdings</p></div>)}</div></Card>}
+      {tab === 'portfolios' && (() => {
+        type Portfolio = {
+          id: string;
+          name: string;
+          type: string;
+          currency: string;
+          target: number;
+          description: string;
+          status: 'Active' | 'Archived';
+        };
+
+        const [portfolioRows, setPortfolioRows] = useState<Portfolio[]>([
+          { id: 'p1', name: 'Wealth', type: 'Wealth', currency: 'EGP', target: 60, description: 'Long-term personal wealth portfolio', status: 'Active' },
+          { id: 'p2', name: 'Retirement', type: 'Retirement', currency: 'EGP', target: 25, description: 'Retirement investments', status: 'Active' },
+          { id: 'p3', name: 'Education', type: 'Education', currency: 'EGP', target: 15, description: 'Education savings and investments', status: 'Active' },
+        ]);
+        const [portfolioFilter, setPortfolioFilter] = useState<'active' | 'archived' | 'all'>('active');
+        const [portfolioSearch, setPortfolioSearch] = useState('');
+        const [portfolioModal, setPortfolioModal] = useState<'add' | 'edit' | null>(null);
+        const [editingPortfolio, setEditingPortfolio] = useState<Portfolio | null>(null);
+
+        const visiblePortfolios = portfolioRows.filter((row) => {
+          const statusMatch = portfolioFilter === 'all' || row.status.toLowerCase() === portfolioFilter;
+          const searchMatch = !portfolioSearch || [row.name, row.type, row.description].join(' ').toLowerCase().includes(portfolioSearch.toLowerCase());
+          return statusMatch && searchMatch;
+        });
+
+        const openPortfolioModal = (portfolio?: Portfolio) => {
+          setEditingPortfolio(portfolio ?? null);
+          setPortfolioModal(portfolio ? 'edit' : 'add');
+        };
+
+        const savePortfolio = (event: React.FormEvent<HTMLFormElement>) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          const name = String(form.get('name') || '').trim();
+          if (!name) return;
+          const next: Portfolio = {
+            id: editingPortfolio?.id ?? 'p-' + Date.now(),
+            name,
+            type: String(form.get('type') || 'Other'),
+            currency: String(form.get('currency') || 'EGP'),
+            target: Math.max(0, Number(form.get('target') || 0)),
+            description: String(form.get('description') || '').trim(),
+            status: String(form.get('status') || 'Active') as Portfolio['status'],
+          };
+          setPortfolioRows((rows) => editingPortfolio ? rows.map((row) => row.id === editingPortfolio.id ? next : row) : [next, ...rows]);
+          setPortfolioModal(null);
+          setEditingPortfolio(null);
+        };
+
+        return (
+          <Card className="p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="font-display text-xl font-extrabold">Portfolios</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Create separate investment portfolios for wealth, retirement, education and other goals.</p>
+              </div>
+              <button type="button" onClick={() => openPortfolioModal()} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground">
+                <Plus className="size-3.5" /> New portfolio
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-[1.5fr_repeat(3,minmax(0,1fr))]">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <input value={portfolioSearch} onChange={(event) => setPortfolioSearch(event.target.value)} placeholder="Search portfolios..." className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary" />
+              </div>
+              {[
+                ['active', 'Active'],
+                ['archived', 'Archived'],
+                ['all', 'All'],
+              ].map(([value, label]) => (
+                <button key={value} type="button" onClick={() => setPortfolioFilter(value as typeof portfolioFilter)} className={'h-10 rounded-xl border px-3 text-xs font-bold ' + (portfolioFilter === value ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:bg-muted')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {visiblePortfolios.map((row) => {
+                const portfolioHoldings = holdings.filter((holding) => holding.portfolio === row.name);
+                const value = portfolioHoldings.reduce((sum, holding) => sum + holding.quantity * holding.price, 0);
+                const investedValue = portfolioHoldings.reduce((sum, holding) => sum + holding.quantity * holding.avgCost, 0);
+                const gain = value - investedValue;
+                const pct = investedValue ? (gain / investedValue) * 100 : 0;
+                return (
+                  <div key={row.id} className="rounded-2xl border border-border p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-bold">{row.name}</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">{row.type} · {row.currency}</p>
+                      </div>
+                      <button type="button" onClick={() => openPortfolioModal(row)} className="grid size-8 place-items-center rounded-lg border border-border hover:bg-muted" title="Edit portfolio">
+                        <MoreHorizontal className="size-4" />
+                      </button>
+                    </div>
+                    <p className="mt-5 text-2xl font-extrabold">{money(value, row.currency)}</p>
+                    <div className="mt-3 flex items-center justify-between text-[11px]">
+                      <span className="text-muted-foreground">Invested {money(investedValue, row.currency)}</span>
+                      <span className={gain >= 0 ? 'font-bold text-primary' : 'font-bold text-destructive'}>{gain >= 0 ? '+' : ''}{money(gain, row.currency)} ({gain >= 0 ? '+' : ''}{pct.toFixed(1)}%)</span>
+                    </div>
+                    <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-primary" style={{ width: Math.min((value / Math.max(currentValue, 1)) * 100, 100) + '%' }} />
+                    </div>
+                    <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>{portfolioHoldings.length} holdings</span>
+                      <span>Target {row.target}%</span>
+                    </div>
+                    {row.description && <p className="mt-3 line-clamp-2 text-[11px] text-muted-foreground">{row.description}</p>}
+                    <span className={'mt-3 inline-flex rounded-full px-2 py-1 text-[10px] font-bold ' + (row.status === 'Active' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground')}>{row.status}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {visiblePortfolios.length === 0 && (
+              <div className="mt-5 rounded-2xl border border-dashed border-border p-8 text-center">
+                <p className="text-sm font-bold">No portfolios found</p>
+                <p className="mt-1 text-xs text-muted-foreground">Create a portfolio or change the filter.</p>
+              </div>
+            )}
+
+            {portfolioModal && (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4">
+                <div className="w-full max-w-xl rounded-3xl border border-border bg-background p-6 shadow-2xl">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-display text-2xl font-extrabold">{editingPortfolio ? 'Edit portfolio' : 'New portfolio'}</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">Portfolio settings are separate from individual holdings.</p>
+                    </div>
+                    <button type="button" onClick={() => { setPortfolioModal(null); setEditingPortfolio(null); }} className="grid size-9 place-items-center rounded-xl border border-border"><X className="size-4" /></button>
+                  </div>
+                  <form onSubmit={savePortfolio} className="mt-5 grid gap-4 sm:grid-cols-2">
+                    <label className="text-xs font-bold">Portfolio name<input name="name" required defaultValue={editingPortfolio?.name ?? ''} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" placeholder="e.g. Emergency Fund" /></label>
+                    <label className="text-xs font-bold">Type<select name="type" defaultValue={editingPortfolio?.type ?? 'Wealth'} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"><option>Wealth</option><option>Retirement</option><option>Children</option><option>Education</option><option>Emergency</option><option>Personal</option><option>Other</option></select></label>
+                    <label className="text-xs font-bold">Base currency<select name="currency" defaultValue={editingPortfolio?.currency ?? 'EGP'} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"><option>EGP</option><option>USD</option><option>SAR</option><option>AED</option></select></label>
+                    <label className="text-xs font-bold">Target allocation %<input name="target" type="number" min="0" max="100" step="0.1" defaultValue={editingPortfolio?.target ?? 0} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" /></label>
+                    <label className="text-xs font-bold sm:col-span-2">Description<textarea name="description" defaultValue={editingPortfolio?.description ?? ''} rows={3} className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-3 text-sm font-normal" placeholder="What is this portfolio for?" /></label>
+                    <label className="text-xs font-bold">Status<select name="status" defaultValue={editingPortfolio?.status ?? 'Active'} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"><option>Active</option><option>Archived</option></select></label>
+                    <div className="flex items-end justify-end gap-2">
+                      <button type="button" onClick={() => { setPortfolioModal(null); setEditingPortfolio(null); }} className="h-11 rounded-xl border border-border px-4 text-sm font-bold">Cancel</button>
+                      <button type="submit" className="h-11 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground">Save portfolio</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </Card>
+        );
+      })()}
 
       {tab === 'platforms' && <Card className="p-5"><div className="flex items-center justify-between"><div><h3 className="font-display text-xl font-extrabold">Platforms</h3><p className="mt-1 text-xs text-muted-foreground">Brokers, banks and investment platforms.</p></div><button type="button" className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-bold"><Plus className="size-3.5" /> Add platform</button></div><div className="mt-5 grid gap-4 md:grid-cols-3">{platforms.map((row) => <div key={row.name} className="rounded-2xl border border-border p-4"><p className="font-bold">{row.name}</p><p className="mt-1 text-[11px] text-muted-foreground">{row.type}</p><p className="mt-5 text-2xl font-extrabold">{money(row.value)}</p><p className="mt-2 text-[11px] text-muted-foreground">{row.holdings} holdings</p></div>)}</div></Card>}
 
