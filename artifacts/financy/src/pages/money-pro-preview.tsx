@@ -601,10 +601,10 @@ function AccountsPreview() {
                 <label className="block">
                   <span className="mb-2 block text-xs font-bold">Currency *</span>
                   <select name="currency" defaultValue={editingAccount?.currency ?? 'EGP'} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10">
-                    <option>EGP — Egyptian Pound</option>
-                    <option>USD — US Dollar</option>
-                    <option>AED — UAE Dirham</option>
-                    <option>SAR — Saudi Riyal</option>
+                    <option value="EGP">EGP — Egyptian Pound</option>
+                    <option value="USD">USD — US Dollar</option>
+                    <option value="AED">AED — UAE Dirham</option>
+                    <option value="SAR">SAR — Saudi Riyal</option>
                   </select>
                   <span className="mt-1 block text-[10px] text-muted-foreground">More currencies can be added later from Settings.</span>
                 </label>
