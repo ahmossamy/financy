@@ -50,6 +50,16 @@ type TransactionRow = {
   description: string | null;
   notes: string | null;
   status: string;
+  transfer_id: string | null;
+};
+
+type TransferRow = {
+  id: string;
+  from_account_id: string;
+  to_account_id: string;
+  amount: number;
+  received_amount: number | null;
+  status: string;
 };
 
 type AccountForm = {
@@ -139,6 +149,7 @@ function formatDate(value: string) {
 export default function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
+  const [transfers, setTransfers] = useState<TransferRow[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -175,7 +186,7 @@ export default function Accounts() {
       return;
     }
 
-    const [accountsResult, transactionsResult, categoriesResult] =
+    const [accountsResult, transactionsResult, transfersResult, categoriesResult] =
       await Promise.all([
         supabase
           .from('accounts')
@@ -193,6 +204,12 @@ export default function Accounts() {
           .eq('user_id', user.id)
           .in('type', ['income', 'expense', 'transfer'])
           .order('transaction_date', { ascending: false }),
+        supabase
+          .from('transfers')
+          .select('id, from_account_id, to_account_id, amount, received_amount, status')
+          .eq('user_id', user.id)
+          .in('status', ['completed', 'pending'])
+          .order('transfer_date', { ascending: false }),
         supabase
           .from('categories')
           .select('id, name, status')
@@ -214,6 +231,12 @@ export default function Accounts() {
       return;
     }
 
+    if (transfersResult.error) {
+      setError(transfersResult.error.message);
+      setLoading(false);
+      return;
+    }
+
     if (categoriesResult.error) {
       setError(categoriesResult.error.message);
       setLoading(false);
@@ -224,6 +247,7 @@ export default function Accounts() {
     setTransactions(
       (transactionsResult.data ?? []) as TransactionRow[],
     );
+    setTransfers((transfersResult.data ?? []) as TransferRow[]);
     setCategories((categoriesResult.data ?? []) as Category[]);
     setLoading(false);
   }
@@ -242,6 +266,7 @@ export default function Accounts() {
     for (const transaction of transactions) {
       if (!transaction.account_id) continue;
       if (transaction.status !== 'completed') continue;
+      if (transaction.type === 'transfer') continue;
       if (!(transaction.account_id in result)) continue;
 
       const amount = Number(transaction.amount || 0);
@@ -253,8 +278,20 @@ export default function Accounts() {
       }
     }
 
+    for (const transfer of transfers) {
+      if (transfer.status !== 'completed') continue;
+
+      if (transfer.from_account_id in result) {
+        result[transfer.from_account_id] -= Number(transfer.amount || 0);
+      }
+
+      if (transfer.to_account_id in result) {
+        result[transfer.to_account_id] += Number(transfer.received_amount || 0);
+      }
+    }
+
     return result;
-  }, [accounts, transactions]);
+  }, [accounts, transactions, transfers]);
 
   const paymentAccounts = useMemo(
     () =>
@@ -409,7 +446,7 @@ export default function Accounts() {
       .filter((transaction) => {
         if (!normalizedSearch) return true;
         const category = categories.find((item) => item.id === transaction.category_id);
-        return [category?.name, transaction.description, transaction.currency_code]
+        return [category?.name, transaction.description, getTag(transaction.notes), transaction.currency_code]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(normalizedSearch));
       })
@@ -438,13 +475,27 @@ export default function Accounts() {
     for (const transaction of allForAccount) {
       result.set(transaction.id, running);
       if (transaction.status !== 'completed') continue;
+
       const amount = Number(transaction.amount || 0);
-      if (transaction.type === 'income') running -= amount;
-      else if (transaction.type === 'expense') running += amount;
+
+      if (transaction.type === 'income') {
+        running -= amount;
+      } else if (transaction.type === 'expense') {
+        running += amount;
+      } else if (transaction.type === 'transfer' && transaction.transfer_id) {
+        const transfer = transfers.find((item) => item.id === transaction.transfer_id);
+        if (!transfer) continue;
+
+        if (transfer.from_account_id === selectedAccount.id) {
+          running += Number(transfer.amount || 0);
+        } else if (transfer.to_account_id === selectedAccount.id) {
+          running -= Number(transfer.received_amount || 0);
+        }
+      }
     }
 
     return result;
-  }, [selectedAccount, transactions, balances]);
+  }, [selectedAccount, transactions, transfers, balances]);
 
   const selectedSummary = useMemo(() => {
     if (!selectedAccount) {
