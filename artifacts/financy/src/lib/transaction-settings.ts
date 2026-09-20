@@ -101,6 +101,7 @@ export const DEFAULT_TRANSACTION_SETTINGS: TransactionSettings = {
     { id: 'exp-fuel', name: 'Fuel', parentId: 'exp-transport' },
     { id: 'exp-shopping', name: 'Shopping', parentId: null },
     { id: 'exp-health', name: 'Health', parentId: null },
+    { id: 'exp-medicine', name: 'Medicine', parentId: 'exp-health' },
     { id: 'exp-education', name: 'Education', parentId: null },
     { id: 'exp-entertainment', name: 'Entertainment', parentId: null },
     { id: 'exp-fees', name: 'Bank Fees', parentId: null },
@@ -128,7 +129,7 @@ export const DEFAULT_TRANSACTION_SETTINGS: TransactionSettings = {
     { id: 'item-electricity', name: 'Electricity Bill', categoryId: 'exp-electricity' },
     { id: 'item-internet', name: 'Internet Bill', categoryId: 'exp-internet' },
     { id: 'item-fuel', name: 'Fuel', categoryId: 'exp-fuel' },
-    { id: 'item-medicine', name: 'Medicine', categoryId: 'exp-health' },
+    { id: 'item-medicine', name: 'Medicine', categoryId: 'exp-medicine' },
   ],
 };
 
