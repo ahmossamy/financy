@@ -280,18 +280,6 @@ function TransactionsPreview() {
     setLineItems((items) => items.length === 1 ? items : items.filter((item) => item.id !== id));
   }
 
-  function addCategory() {
-    const value = window.prompt('New expense category');
-    if (!value?.trim()) return;
-    if (expenseCategories.some((item) => item.name.toLowerCase() === value.trim().toLowerCase())) return;
-    const next = {
-      ...transactionSettings,
-      expenseCategories: [...expenseCategories, { id: 'exp-custom-' + Date.now(), name: value.trim(), parentId: null }],
-    };
-    setTransactionSettings(next);
-    saveTransactionSettings(next);
-  }
-
   function handleAttachments(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
     setAttachments((items) => [...items, ...files.map((file) => ({ name: file.name, type: file.type }))]);
@@ -498,7 +486,6 @@ function TransactionsPreview() {
                                 return configuredCategory ? configuredCategory.name : item.category;
                               })()}
                             </span>
-                            <button type="button" onClick={addCategory} className="h-10 rounded-lg border border-border px-3 text-[10px] font-bold">+ Category</button>
                           </div>
                         </div>
                       ))}
