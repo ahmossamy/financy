@@ -4,6 +4,7 @@ import {
   ArrowLeftRight,
   ArrowUpRight,
   BarChart3,
+  Building2,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -71,6 +72,211 @@ function Progress({ value }: { value: number }) {
     <div className="h-2 overflow-hidden rounded-full bg-muted">
       <div className="h-full rounded-full bg-primary" style={{ width: Math.min(value, 100) + '%' }} />
     </div>
+  );
+}
+
+function AccountsPreview() {
+  const [filter, setFilter] = useState<'all' | 'cash' | 'bank' | 'investment' | 'card'>('all');
+  const [search, setSearch] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [accounts, setAccounts] = useState(accountRows);
+
+  const filtered = accounts.filter((account) => {
+    const matchesType = filter === 'all' || (
+      filter === 'cash' ? account.type === 'Cash' :
+      filter === 'bank' ? account.type === 'Bank' :
+      filter === 'investment' ? account.type === 'Investment' :
+      account.type === 'Credit card'
+    );
+    const matchesSearch = account.name.toLowerCase().includes(search.toLowerCase()) || account.type.toLowerCase().includes(search.toLowerCase());
+    return matchesType && matchesSearch;
+  });
+
+  const totals = {
+    cash: accounts.filter((a) => a.type === 'Cash' || a.type === 'Bank').reduce((s, a) => s + (a.currency === 'EGP' ? a.balance : 0), 0),
+    investments: accounts.filter((a) => a.type === 'Investment' && a.currency === 'EGP').reduce((s, a) => s + a.balance, 0),
+    cards: accounts.filter((a) => a.type === 'Credit card' && a.currency === 'EGP').reduce((s, a) => s + Math.abs(a.balance), 0),
+  };
+
+  function submitAccount(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get('name') || 'New account').trim();
+    const type = String(form.get('type') || 'Bank') as typeof accountRows[number]['type'];
+    const currency = String(form.get('currency') || 'EGP');
+    setAccounts((current) => [...current, { name, type, currency, balance: 0 }]);
+    setShowAdd(false);
+    event.currentTarget.reset();
+  }
+
+  return (
+    <section className="space-y-6">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Money management</p>
+          <h2 className="mt-1 font-display text-3xl font-extrabold tracking-tight">Accounts</h2>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Manage cash, banks, investment accounts and credit cards with a clear register-style view.</p>
+        </div>
+        <button
+          onClick={() => setShowAdd(true)}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm"
+        >
+          <CirclePlus className="size-4" />
+          New account
+        </button>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="p-5">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-muted-foreground">Payment accounts</p>
+            <WalletCards className="size-4 text-primary" />
+          </div>
+          <p className="mt-2 font-display text-2xl font-extrabold">{money(totals.cash)}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Cash and bank balances in EGP</p>
+        </Card>
+        <Card className="p-5">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-muted-foreground">Investments</p>
+            <Building2 className="size-4 text-primary" />
+          </div>
+          <p className="mt-2 font-display text-2xl font-extrabold">{money(totals.investments)}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Investment accounts tracked separately</p>
+        </Card>
+        <Card className="p-5">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-muted-foreground">Credit card debt</p>
+            <WalletCards className="size-4" />
+          </div>
+          <p className="mt-2 font-display text-2xl font-extrabold">{money(totals.cards)}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Outstanding card balance</p>
+        </Card>
+      </div>
+
+      <Card className="overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-border bg-card p-4 sm:p-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="relative min-w-0 flex-1 lg:max-w-md">
+              <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search accounts..."
+                className="h-11 w-full rounded-2xl border border-border bg-background pl-11 pr-4 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(event) => setShowArchived(event.target.checked)}
+                className="size-4 accent-primary"
+              />
+              Show archived
+            </label>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {[
+              ['all', 'All accounts'],
+              ['cash', 'Cash'],
+              ['bank', 'Banks'],
+              ['investment', 'Investments'],
+              ['card', 'Credit cards'],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => setFilter(value as typeof filter)}
+                className={'rounded-xl px-3 py-2 text-xs font-bold transition-colors ' + (filter === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground')}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="hidden grid-cols-[1.7fr_.9fr_.6fr_1fr_auto] gap-4 border-b border-border bg-muted/40 px-5 py-3 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground sm:grid">
+          <span>Account</span>
+          <span>Type</span>
+          <span>Currency</span>
+          <span className="text-right">Balance</span>
+          <span />
+        </div>
+
+        <div className="divide-y divide-border">
+          {filtered.map((account) => (
+            <div key={account.name} className="grid grid-cols-2 items-center gap-3 px-5 py-4 transition-colors hover:bg-muted/20 sm:grid-cols-[1.7fr_.9fr_.6fr_1fr_auto]">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold">{account.name}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground sm:hidden">{account.type} · {account.currency}</p>
+              </div>
+              <span className="hidden text-xs text-muted-foreground sm:block">{account.type}</span>
+              <span className="hidden text-xs font-semibold sm:block">{account.currency}</span>
+              <span className={'text-right text-sm font-extrabold ' + (account.balance < 0 ? 'text-destructive' : '')}>
+                {money(account.balance, account.currency)}
+              </span>
+              <button aria-label={'Open ' + account.name} className="hidden size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground sm:grid">
+                <MoreHorizontal className="size-4" />
+              </button>
+            </div>
+          ))}
+
+          {filtered.length === 0 && (
+            <div className="px-5 py-12 text-center">
+              <p className="text-sm font-bold">No accounts found</p>
+              <p className="mt-1 text-xs text-muted-foreground">Try another search or category.</p>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {showAdd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-[28px] border border-border bg-card p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Accounts</p>
+                <h3 className="mt-1 font-display text-2xl font-extrabold">New account</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Add a cash, bank, investment or credit card account.</p>
+              </div>
+              <button onClick={() => setShowAdd(false)} className="rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-muted">Close</button>
+            </div>
+
+            <form onSubmit={submitAccount} className="mt-6 space-y-4">
+              <label className="block">
+                <span className="mb-2 block text-xs font-bold">Account name</span>
+                <input name="name" required placeholder="e.g. CIB Main" className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-2 block text-xs font-bold">Type</span>
+                  <select name="type" className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none">
+                    <option>Bank</option>
+                    <option>Cash</option>
+                    <option>Investment</option>
+                    <option>Credit card</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-xs font-bold">Currency</span>
+                  <select name="currency" className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none">
+                    <option>EGP</option>
+                    <option>USD</option>
+                    <option>AED</option>
+                    <option>SAR</option>
+                  </select>
+                </label>
+              </div>
+              <div className="flex justify-end gap-2 border-t border-border pt-4">
+                <button type="button" onClick={() => setShowAdd(false)} className="h-10 rounded-xl border border-border px-4 text-sm font-bold">Cancel</button>
+                <button type="submit" className="h-10 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground">Create account</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -251,23 +457,7 @@ export default function MoneyProPreview() {
             )}
 
             {screen === 'accounts' && (
-              <section className="space-y-5">
-                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-                  <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Checkbook register</p><h2 className="mt-1 font-display text-3xl font-extrabold">Accounts</h2><p className="mt-1 text-sm text-muted-foreground">Cash, banks, cards and investment accounts.</p></div>
-                  <button className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground"><CirclePlus className="size-4" />New account</button>
-                </div>
-                <Card className="overflow-hidden">
-                  <div className="hidden grid-cols-[1.6fr_.9fr_.5fr_1fr] gap-4 border-b border-border bg-muted/40 px-5 py-3 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground sm:grid"><span>Account</span><span>Type</span><span>Currency</span><span className="text-right">Balance</span></div>
-                  {accountRows.map((row) => (
-                    <div key={row.name} className="grid grid-cols-2 items-center gap-3 border-b border-border px-5 py-4 last:border-0 sm:grid-cols-[1.6fr_.9fr_.5fr_1fr]">
-                      <div><p className="text-sm font-bold">{row.name}</p><p className="text-[11px] text-muted-foreground sm:hidden">{row.type} · {row.currency}</p></div>
-                      <span className="hidden text-xs text-muted-foreground sm:block">{row.type}</span>
-                      <span className="hidden text-xs font-semibold sm:block">{row.currency}</span>
-                      <span className={'text-right text-sm font-extrabold ' + (row.balance < 0 ? 'text-destructive' : '')}>{money(row.balance, row.currency)}</span>
-                    </div>
-                  ))}
-                </Card>
-              </section>
+              <AccountsPreview />
             )}
 
             {screen === 'transactions' && (
