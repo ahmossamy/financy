@@ -1,25 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-if (!supabaseUrl) {
-  throw new Error(
-    'VITE_SUPABASE_URL is not configured. Add it to the project environment before starting Financy.',
-  );
-}
-
-if (!supabasePublishableKey) {
-  throw new Error(
-    'VITE_SUPABASE_PUBLISHABLE_KEY is not configured. Add it to the project environment before starting Financy.',
-  );
-}
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://qjknubujqebzcbahpfjb.supabase.co';
+const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'missing-publishable-key';
 
 /**
  * Shared browser client for Financy.
  *
- * Supabase Authentication is enabled and the session is persisted
- * in the browser so the user remains signed in.
+ * GitHub Pages builds can start without the publishable key configured.
+ * In that case the client stays available so the UI can render and
+ * gracefully fall back to demo data. Authenticated Supabase features
+ * become active as soon as VITE_SUPABASE_PUBLISHABLE_KEY is provided
+ * to the deployment environment.
  */
 export const supabase = createClient(
   supabaseUrl,
