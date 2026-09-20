@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   CalendarDays,
   Check,
+  ChevronRight,
   FileUp,
   Pencil,
   Plus,
@@ -52,7 +53,6 @@ type TransactionForm = {
   transaction_date: string;
   payee: string;
   payment_method: string;
-  description: string;
   notes: string;
 };
 
@@ -64,7 +64,6 @@ const EMPTY_FORM: TransactionForm = {
   transaction_date: new Date().toISOString().slice(0, 10),
   payee: '',
   payment_method: '',
-  description: '',
   notes: '',
 };
 
@@ -157,6 +156,10 @@ export default function Transactions({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [period, setPeriod] = useState('this_month');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] =
@@ -237,11 +240,44 @@ export default function Transactions({
   const visibleTransactions = useMemo(() => {
     const query = search.trim().toLowerCase();
 
+    const today = new Date();
+    const start = new Date(today);
+    const end = new Date(today);
+    if (period === 'today') {
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    } else if (period === 'this_week') {
+      const day = start.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      start.setDate(start.getDate() - diff);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    } else if (period === 'this_month') {
+      start.setDate(1);
+      start.setHours(0, 0, 0, 0);
+      end.setMonth(end.getMonth() + 1, 0);
+      end.setHours(23, 59, 59, 999);
+    } else if (period === 'last_30_days') {
+      start.setDate(start.getDate() - 29);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    }
+
     return transactions.filter((transaction) => {
       const matchesType =
         activeFilter === 'all' || transaction.type === activeFilter;
-
       if (!matchesType) return false;
+
+      if (period !== 'all') {
+        if (period === 'custom') {
+          if (customFrom && transaction.transaction_date < customFrom) return false;
+          if (customTo && transaction.transaction_date > customTo) return false;
+        } else {
+          const date = new Date(`${transaction.transaction_date}T12:00:00`);
+          if (date < start || date > end) return false;
+        }
+      }
+
       if (!query) return true;
 
       const account = accounts.find(
@@ -263,7 +299,7 @@ export default function Transactions({
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query));
     });
-  }, [transactions, accounts, categories, activeFilter, search]);
+  }, [transactions, accounts, categories, activeFilter, search, period, customFrom, customTo]);
 
   const totals = useMemo(() => {
     const result: Record<string, { income: number; expense: number }> = {};
@@ -309,7 +345,6 @@ export default function Transactions({
       transaction_date: transaction.transaction_date,
       payee: meta.payee,
       payment_method: meta.paymentMethod,
-      description: transaction.description ?? '',
       notes: getDisplayNotes(transaction.notes),
     });
     setAttachmentName('');
@@ -370,7 +405,7 @@ export default function Transactions({
       amount,
       currency_code: form.currency_code,
       transaction_date: form.transaction_date,
-      description: form.description.trim() || null,
+      description: editingTransaction?.description ?? null,
       notes: buildNotes(form),
       status: 'completed',
     };
@@ -472,7 +507,8 @@ export default function Transactions({
         </button>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="inline-flex w-fit rounded-2xl border border-border bg-card p-1">
           {(['all', 'income', 'expense', 'transfer'] as ListFilter[]).map(
             (filter) => {
@@ -500,15 +536,39 @@ export default function Transactions({
           )}
         </div>
 
-        <div className="relative w-full sm:max-w-sm">
-          <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search transactions..."
-            className="h-11 w-full rounded-2xl border border-border bg-card pl-11 pr-4 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-          />
+        <div className="flex w-full flex-col gap-3 sm:flex-row lg:max-w-2xl">
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search transactions..."
+              className="h-11 w-full rounded-2xl border border-border bg-card pl-11 pr-4 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+            />
+          </div>
+          <div className="relative sm:w-48">
+            <CalendarDays className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <select
+              value={period}
+              onChange={(event) => setPeriod(event.target.value)}
+              className="h-11 w-full appearance-none rounded-2xl border border-border bg-card pl-11 pr-4 text-sm font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+            >
+              <option value="all">All time</option>
+              <option value="today">Today</option>
+              <option value="this_week">This week</option>
+              <option value="this_month">This month</option>
+              <option value="last_30_days">Last 30 days</option>
+              <option value="custom">Custom range</option>
+            </select>
+          </div>
         </div>
+        </div>
+        {period === 'custom' && (
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <input type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary" />
+            <input type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary" />
+          </div>
+        )}
       </div>
 
       {error && (
@@ -525,7 +585,7 @@ export default function Transactions({
 
       {!loading && activeFilter !== 'transfer' && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {Object.entries(totals).map(([currency, value]) => (
+          {(Object.entries(totals) as Array<[string, { income: number; expense: number }]>).map(([currency, value]) => (
             <div
               key={currency}
               className="rounded-2xl border border-border bg-card p-5 card-shadow"
@@ -621,13 +681,15 @@ export default function Transactions({
               const isTransfer = transaction.type === 'transfer';
 
               return (
-                <div
+                <button
                   key={transaction.id}
-                  className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between"
+                  type="button"
+                  onClick={() => setSelectedTransaction(transaction)}
+                  className="flex w-full flex-col gap-4 px-5 py-5 text-left transition-colors hover:bg-muted/40 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <div
-                      className={`grid size-11 shrink-0 place-items-center rounded-xl ${
+                      className={`grid size-11 shrink-0 place-items-center rounded-full ${
                         isTransfer
                           ? 'bg-blue-50 text-blue-700'
                           : isIncome
@@ -647,21 +709,11 @@ export default function Transactions({
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="truncate text-sm font-bold">
-                          {transaction.description ||
-                            meta.payee ||
-                            category?.name ||
-                            transaction.type}
+                          {category?.name || (isTransfer ? 'Transfer' : isIncome ? 'Income' : 'Expense')}
                         </h4>
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                          {transaction.type}
-                        </span>
                       </div>
-
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {account?.name || 'Account'}
-                        {category?.name ? ` • ${category.name}` : ''}
-                        {meta.payee ? ` • ${meta.payee}` : ''}
-                        {` • ${formatDate(transaction.transaction_date)}`}
+                        {account?.name || 'Account'} · {formatDate(transaction.transaction_date)}
                       </p>
                     </div>
                   </div>
@@ -678,39 +730,90 @@ export default function Transactions({
                         }`}
                       >
                         {isIncome ? '+' : isTransfer ? '' : '-'}{' '}
-                        {formatMoney(
-                          Number(transaction.amount),
-                          transaction.currency_code,
-                        )}
+                        {formatMoney(Number(transaction.amount), transaction.currency_code)}
                       </p>
                       <p className="mt-1 text-[11px] text-muted-foreground">
                         {transaction.status}
                       </p>
                     </div>
-
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                     <div className="flex gap-1">
-                      <button
-                        onClick={() => openEditModal(transaction)}
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(event) => { event.stopPropagation(); openEditModal(transaction); }}
+                        onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); openEditModal(transaction); } }}
                         className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground"
                         aria-label="Edit transaction"
                       >
                         <Pencil className="size-4" />
-                      </button>
-                      <button
-                        onClick={() => deleteTransaction(transaction)}
+                      </span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(event) => { event.stopPropagation(); deleteTransaction(transaction); }}
+                        onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); deleteTransaction(transaction); } }}
                         className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                         aria-label="Delete transaction"
                       >
                         <Trash2 className="size-4" />
-                      </button>
+                      </span>
                     </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
         )}
       </section>
+
+      {selectedTransaction && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center">
+          <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-border bg-card shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border px-6 py-5">
+              <div>
+                <p className="text-xs font-semibold text-primary">Transactions</p>
+                <h3 className="mt-1 font-display text-xl font-bold">
+                  {categories.find((item) => item.id === selectedTransaction.category_id)?.name || (selectedTransaction.type === 'transfer' ? 'Transfer' : selectedTransaction.type === 'income' ? 'Income' : 'Expense')}
+                </h3>
+              </div>
+              <button onClick={() => setSelectedTransaction(null)} className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted" aria-label="Close">
+                <X className="size-5" />
+              </button>
+            </div>
+            <div className="space-y-4 p-6">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-border p-4">
+                  <p className="text-xs font-semibold text-muted-foreground">Amount</p>
+                  <p className={`mt-2 font-display text-xl font-bold ${selectedTransaction.type === 'income' ? 'text-primary' : selectedTransaction.type === 'expense' ? 'text-destructive' : 'text-foreground'}`}>
+                    {selectedTransaction.type === 'income' ? '+' : selectedTransaction.type === 'expense' ? '-' : ''} {formatMoney(Number(selectedTransaction.amount), selectedTransaction.currency_code)}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-border p-4">
+                  <p className="text-xs font-semibold text-muted-foreground">Date</p>
+                  <p className="mt-2 text-sm font-bold">{formatDate(selectedTransaction.transaction_date)}</p>
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-border p-4">
+                  <p className="text-xs font-semibold text-muted-foreground">Account</p>
+                  <p className="mt-2 text-sm font-bold">{accounts.find((item) => item.id === selectedTransaction.account_id)?.name || 'Account'}</p>
+                </div>
+                <div className="rounded-2xl border border-border p-4">
+                  <p className="text-xs font-semibold text-muted-foreground">Status</p>
+                  <p className="mt-2 text-sm font-bold capitalize">{selectedTransaction.status}</p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 border-t border-border pt-4">
+                <button onClick={() => { setSelectedTransaction(null); openEditModal(selectedTransaction); }} className="inline-flex h-10 items-center gap-2 rounded-xl border border-border px-4 text-xs font-bold">
+                  <Pencil className="size-3.5" />
+                  Edit transaction
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modalOpen && (
         <div
@@ -906,16 +1009,6 @@ export default function Transactions({
                         </option>
                       ))}
                     </select>
-                  </label>
-
-                  <label className="block sm:col-span-2">
-                    <span className="mb-2 block text-sm font-bold">Description</span>
-                    <input
-                      value={form.description}
-                      onChange={(event) => updateField('description', event.target.value)}
-                      className={inputClass}
-                      placeholder={modalType === 'income' ? 'Salary' : 'What did you spend on?'}
-                    />
                   </label>
 
                   <label className="block sm:col-span-2">
