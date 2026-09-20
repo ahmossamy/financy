@@ -140,70 +140,176 @@ function InvestmentsPreview() {
     status: 'Active' | 'Archived';
   };
 
-  const [portfolioRows, setPortfolioRows] = useState<Portfolio[]>([
-    { id: 'p1', name: 'Wealth', type: 'Wealth', currency: 'EGP', target: 60, description: 'Long-term personal wealth portfolio', status: 'Active' },
-    { id: 'p2', name: 'Retirement', type: 'Retirement', currency: 'EGP', target: 25, description: 'Retirement investments', status: 'Active' },
-    { id: 'p3', name: 'Education', type: 'Education', currency: 'EGP', target: 15, description: 'Education savings and investments', status: 'Active' },
-  ]);
+  const demoPortfolios: Portfolio[] = [
+    { id: 'demo-p1', name: 'Wealth', type: 'Wealth', currency: 'EGP', target: 60, description: 'Long-term personal wealth portfolio', status: 'Active' },
+    { id: 'demo-p2', name: 'Retirement', type: 'Retirement', currency: 'EGP', target: 25, description: 'Retirement investments', status: 'Active' },
+    { id: 'demo-p3', name: 'Education', type: 'Education', currency: 'EGP', target: 15, description: 'Education savings and investments', status: 'Active' },
+  ];
+
+  const [portfolioRows, setPortfolioRows] = useState<Portfolio[]>(demoPortfolios);
   const [portfolioFilter, setPortfolioFilter] = useState<'active' | 'archived' | 'all'>('active');
   const [portfolioSearch, setPortfolioSearch] = useState('');
   const [portfolioModal, setPortfolioModal] = useState<'add' | 'edit' | null>(null);
   const [editingPortfolio, setEditingPortfolio] = useState<Portfolio | null>(null);
+  const [portfolioLoading, setPortfolioLoading] = useState(false);
+  const [portfolioConnected, setPortfolioConnected] = useState(false);
 
-  const [holdings, setHoldings] = useState<Holding[]>([
-    { id: 'h1', asset: 'Orascom Construction', symbol: 'ORAS', type: 'Stock', portfolio: 'Wealth', platform: 'Thndr', quantity: 120, avgCost: 133.33, price: 160, currency: 'EGP' },
-    { id: 'h2', asset: 'EFG Holding', symbol: 'EFID', type: 'Stock', portfolio: 'Wealth', platform: 'Thndr', quantity: 400, avgCost: 20, price: 24.5, currency: 'EGP' },
-    { id: 'h3', asset: 'Telecom Egypt', symbol: 'ETEL', type: 'Stock', portfolio: 'Wealth', platform: 'Thndr', quantity: 300, avgCost: 20.13, price: 25.2, currency: 'EGP' },
-    { id: 'h4', asset: 'Abu Dhabi Islamic Bank', symbol: 'ADIB', type: 'Stock', portfolio: 'Wealth', platform: 'CIB', quantity: 180, avgCost: 36.06, price: 42.5, currency: 'EGP' },
-    { id: 'h5', asset: 'Elsewedy Electric', symbol: 'SWDY', type: 'Stock', portfolio: 'Retirement', platform: 'Thndr', quantity: 60, avgCost: 42.05, price: 48.8, currency: 'EGP' },
-    { id: 'h6', asset: 'Talaat Moustafa Group', symbol: 'TMGH', type: 'Stock', portfolio: 'Retirement', platform: 'Thndr', quantity: 45, avgCost: 53.44, price: 61.2, currency: 'EGP' },
-    { id: 'h7', asset: 'Sharia Equity Fund', symbol: 'CI-SHARIA', type: 'Fund', portfolio: 'Education', platform: 'CIB', quantity: 1000, avgCost: 10, price: 11.2, currency: 'EGP' },
-  ]);
+  useEffect(() => {
+    let mounted = true;
 
-  const portfolios = [
-    { name: 'Wealth', type: 'Wealth', target: 60, value: 43800 },
-    { name: 'Retirement', type: 'Retirement', target: 25, value: 11900 },
-    { name: 'Education', type: 'Education', target: 15, value: 5800 },
-  ];
-  const platforms = [
-    { name: 'Thndr', type: 'Broker', value: 38200, holdings: 6 },
-    { name: 'CIB', type: 'Bank / Funds', value: 17100, holdings: 2 },
-    { name: 'Tilda', type: 'Investment platform', value: 6200, holdings: 0 },
-  ];
-  const activity = [
-    { date: '20 Sep 2026', action: 'Buy', asset: 'ORAS', portfolio: 'Wealth', platform: 'Thndr', amount: 5000 },
-    { date: '15 Sep 2026', action: 'Dividend', asset: 'ADIB', portfolio: 'Wealth', platform: 'CIB', amount: 780 },
-    { date: '10 Sep 2026', action: 'Buy', asset: 'CI-SHARIA', portfolio: 'Education', platform: 'CIB', amount: 3000 },
-    { date: '01 Sep 2026', action: 'Buy', asset: 'SWDY', portfolio: 'Retirement', platform: 'Thndr', amount: 2500 },
-  ];
+    async function loadPortfolios() {
+      const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      if (!key || key === 'missing-publishable-key') {
+        if (mounted) {
+          setPortfolioRows(demoPortfolios);
+          setPortfolioConnected(false);
+        }
+        return;
+      }
 
-  const invested = holdings.reduce((sum, row) => sum + row.quantity * row.avgCost, 0);
-  const currentValue = holdings.reduce((sum, row) => sum + row.quantity * row.price, 0);
-  const unrealized = currentValue - invested;
-  const returnPct = invested ? (unrealized / invested) * 100 : 0;
+      setPortfolioLoading(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          if (mounted) {
+            setPortfolioRows(demoPortfolios);
+            setPortfolioConnected(false);
+          }
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('portfolios')
+          .select('id,name,description,base_currency,status,portfolio_type,target_allocation')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true });
+
+        if (error) throw error;
+
+        if (mounted) {
+          setPortfolioRows((data ?? []).map((row) => ({
+            id: row.id,
+            name: row.name,
+            type: String(row.portfolio_type ?? 'other').replace('_', ' ').replace(/\\b\\w/g, (char) => char.toUpperCase()),
+            currency: row.base_currency,
+            target: Number(row.target_allocation ?? 0),
+            description: row.description ?? '',
+            status: row.status === 'archived' ? 'Archived' : 'Active',
+          })));
+          setPortfolioConnected(true);
+        }
+      } catch {
+        if (mounted) {
+          setPortfolioRows(demoPortfolios);
+          setPortfolioConnected(false);
+        }
+      } finally {
+        if (mounted) setPortfolioLoading(false);
+      }
+    }
+
+    loadPortfolios();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const visiblePortfolios = portfolioRows.filter((row) => {
+    const statusMatch = portfolioFilter === 'all' || row.status.toLowerCase() === portfolioFilter;
+    const searchMatch = !portfolioSearch || [row.name, row.type, row.description].join(' ').toLowerCase().includes(portfolioSearch.toLowerCase());
+    return statusMatch && searchMatch;
+  });
 
   const openPortfolioModal = (portfolio?: Portfolio) => {
     setEditingPortfolio(portfolio ?? null);
     setPortfolioModal(portfolio ? 'edit' : 'add');
   };
 
-  const savePortfolio = (event: React.FormEvent<HTMLFormElement>) => {
+  const savePortfolio = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const name = String(form.get('name') || '').trim();
     if (!name) return;
+
+    const type = String(form.get('type') || 'Other');
     const next: Portfolio = {
       id: editingPortfolio?.id ?? 'p-' + Date.now(),
       name,
-      type: String(form.get('type') || 'Other'),
+      type,
       currency: String(form.get('currency') || 'EGP'),
-      target: Math.max(0, Number(form.get('target') || 0)),
+      target: Math.min(100, Math.max(0, Number(form.get('target') || 0))),
       description: String(form.get('description') || '').trim(),
       status: String(form.get('status') || 'Active') as Portfolio['status'],
     };
-    setPortfolioRows((rows) => editingPortfolio ? rows.map((row) => row.id === editingPortfolio.id ? next : row) : [next, ...rows]);
-    setPortfolioModal(null);
-    setEditingPortfolio(null);
+
+    const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    if (!key || key === 'missing-publishable-key' || !portfolioConnected) {
+      setPortfolioRows((rows) => editingPortfolio ? rows.map((row) => row.id === editingPortfolio.id ? next : row) : [next, ...rows]);
+      setPortfolioModal(null);
+      setEditingPortfolio(null);
+      return;
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No authenticated user');
+
+      const payload = {
+        user_id: user.id,
+        name: next.name,
+        description: next.description || null,
+        base_currency: next.currency,
+        portfolio_type: next.type.toLowerCase().replace(/\\s+/g, '_'),
+        target_allocation: next.target,
+        status: next.status.toLowerCase(),
+      };
+
+      if (editingPortfolio) {
+        const { data, error } = await supabase
+          .from('portfolios')
+          .update(payload)
+          .eq('id', editingPortfolio.id)
+          .eq('user_id', user.id)
+          .select('id,name,description,base_currency,status,portfolio_type,target_allocation')
+          .single();
+        if (error) throw error;
+        const saved: Portfolio = {
+          id: data.id,
+          name: data.name,
+          type: String(data.portfolio_type ?? 'other').replace('_', ' ').replace(/\\b\\w/g, (char) => char.toUpperCase()),
+          currency: data.base_currency,
+          target: Number(data.target_allocation ?? 0),
+          description: data.description ?? '',
+          status: data.status === 'archived' ? 'Archived' : 'Active',
+        };
+        setPortfolioRows((rows) => rows.map((row) => row.id === editingPortfolio.id ? saved : row));
+      } else {
+        const { data, error } = await supabase
+          .from('portfolios')
+          .insert(payload)
+          .select('id,name,description,base_currency,status,portfolio_type,target_allocation')
+          .single();
+        if (error) throw error;
+        const saved: Portfolio = {
+          id: data.id,
+          name: data.name,
+          type: String(data.portfolio_type ?? 'other').replace('_', ' ').replace(/\\b\\w/g, (char) => char.toUpperCase()),
+          currency: data.base_currency,
+          target: Number(data.target_allocation ?? 0),
+          description: data.description ?? '',
+          status: data.status === 'archived' ? 'Archived' : 'Active',
+        };
+        setPortfolioRows((rows) => [saved, ...rows]);
+      }
+
+      setPortfolioModal(null);
+      setEditingPortfolio(null);
+    } catch {
+      setPortfolioRows((rows) => editingPortfolio ? rows.map((row) => row.id === editingPortfolio.id ? next : row) : [next, ...rows]);
+      setPortfolioModal(null);
+      setEditingPortfolio(null);
+      setPortfolioConnected(false);
+    }
   };
 
   function addHolding(event: React.FormEvent<HTMLFormElement>) {
@@ -285,6 +391,9 @@ function InvestmentsPreview() {
               <div>
                 <h3 className="font-display text-xl font-extrabold">Portfolios</h3>
                 <p className="mt-1 text-xs text-muted-foreground">Create separate investment portfolios for wealth, retirement, education and other goals.</p>
+                <div className="mt-2 text-[10px] font-semibold">
+                  {portfolioLoading ? <span className="text-muted-foreground">Loading portfolios...</span> : portfolioConnected ? <span className="text-primary">Connected to your Financy data</span> : <span className="text-muted-foreground">Demo data · connect Supabase to save portfolios</span>}
+                </div>
               </div>
               <button type="button" onClick={() => openPortfolioModal()} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground">
                 <Plus className="size-3.5" /> New portfolio
