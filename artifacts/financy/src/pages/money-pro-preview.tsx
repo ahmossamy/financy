@@ -10,6 +10,7 @@ import {
   ChevronRight,
   CirclePlus,
   FileText,
+  Filter,
   LayoutDashboard,
   Menu,
   MoreHorizontal,
@@ -18,6 +19,7 @@ import {
   Search,
   Settings,
   WalletCards,
+  X,
 } from 'lucide-react';
 
 type Screen = 'overview' | 'accounts' | 'transactions' | 'calendar' | 'budgets' | 'reports';
@@ -73,6 +75,286 @@ function Progress({ value }: { value: number }) {
     <div className="h-2 overflow-hidden rounded-full bg-muted">
       <div className="h-full rounded-full bg-primary" style={{ width: Math.min(value, 100) + '%' }} />
     </div>
+  );
+}
+
+
+type TransactionRecord = {
+  id: string;
+  date: string;
+  title: string;
+  account: string;
+  category: string;
+  amount: number;
+  type: 'income' | 'expense' | 'transfer';
+  payee?: string;
+  description?: string;
+  className?: string;
+  checkNumber?: string;
+  status: 'cleared' | 'not-cleared' | 'planned';
+  recurring?: boolean;
+};
+
+function TransactionsPreview() {
+  const [rows, setRows] = useState<TransactionRecord[]>(() =>
+    transactionRows.map((row, index) => ({
+      ...row,
+      id: 'tx-' + index,
+      status: 'cleared',
+      description: row.title,
+      className: 'Personal',
+    })),
+  );
+  const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
+  const [accountFilter, setAccountFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'cleared' | 'not-cleared' | 'planned'>('all');
+  const [classFilter, setClassFilter] = useState('all');
+  const [period, setPeriod] = useState<'this-month' | 'last-month' | '30-days' | 'custom'>('this-month');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [search, setSearch] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [selected, setSelected] = useState<TransactionRecord | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+
+  const accounts = Array.from(new Set(rows.map((row) => row.account)));
+  const categories = Array.from(new Set(rows.map((row) => row.category)));
+  const classes = Array.from(new Set(rows.map((row) => row.className ?? 'Personal')));
+
+  function transactionDate(value: string) {
+    return new Date(value + ' 2026');
+  }
+
+  const filtered = useMemo(() => {
+    const now = new Date(2026, 8, 20);
+    let start = new Date(now.getFullYear(), now.getMonth(), 1);
+    let end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+    if (period === 'last-month') {
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    } else if (period === '30-days') {
+      start = new Date(now);
+      start.setDate(start.getDate() - 29);
+      start.setHours(0, 0, 0, 0);
+    } else if (period === 'custom') {
+      if (fromDate) start = new Date(fromDate + 'T00:00:00');
+      if (toDate) end = new Date(toDate + 'T23:59:59');
+    }
+
+    return rows.filter((row) => {
+      const date = transactionDate(row.date);
+      const text = [row.title, row.account, row.category, row.payee, row.description, row.checkNumber].join(' ').toLowerCase();
+      return (
+        date >= start &&
+        date <= end &&
+        (typeFilter === 'all' || row.type === typeFilter) &&
+        (accountFilter === 'all' || row.account === accountFilter) &&
+        (categoryFilter === 'all' || row.category === categoryFilter) &&
+        (statusFilter === 'all' || row.status === statusFilter) &&
+        (classFilter === 'all' || row.className === classFilter) &&
+        (!search || text.includes(search.toLowerCase()))
+      );
+    });
+  }, [rows, typeFilter, accountFilter, categoryFilter, statusFilter, classFilter, period, fromDate, toDate, search]);
+
+  const totals = filtered.reduce(
+    (acc, row) => {
+      if (row.status === 'planned') return acc;
+      if (row.type === 'income') acc.income += row.amount;
+      if (row.type === 'expense') acc.expenses += Math.abs(row.amount);
+      return acc;
+    },
+    { income: 0, expenses: 0 },
+  );
+
+  function addTransaction(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const type = String(form.get('type')) as TransactionRecord['type'];
+    const amount = Math.abs(Number(form.get('amount') || 0));
+    const date = String(form.get('date') || '2026-09-20');
+    const account = String(form.get('account') || 'CIB');
+    const category = String(form.get('category') || 'General');
+    const title = String(form.get('title') || category);
+    const payee = String(form.get('payee') || '');
+    const description = String(form.get('description') || '');
+    const status = String(form.get('status') || 'cleared') as TransactionRecord['status'];
+
+    const record: TransactionRecord = {
+      id: 'tx-' + Date.now(),
+      date: new Date(date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+      title,
+      account,
+      category,
+      amount: type === 'expense' ? -amount : amount,
+      type,
+      payee,
+      description,
+      className: String(form.get('className') || 'Personal'),
+      checkNumber: String(form.get('checkNumber') || ''),
+      status,
+      recurring: form.get('recurring') === 'on',
+    };
+
+    setRows((current) => [record, ...current]);
+    setShowAdd(false);
+  }
+
+  return (
+    <section className="space-y-5">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Checkbook register</p>
+          <h2 className="mt-1 font-display text-3xl font-extrabold">Transactions</h2>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Record, filter and review income, expenses, transfers and planned recurring transactions.</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setShowFilters((value) => !value)} className={'inline-flex h-11 items-center gap-2 rounded-2xl border px-4 text-sm font-bold ' + (showFilters ? 'border-primary bg-primary/5 text-primary' : 'border-border')}>
+            <Filter className="size-4" /> Filters
+          </button>
+          <button onClick={() => setShowAdd(true)} className="inline-flex h-11 items-center gap-2 rounded-2xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm">
+            <Plus className="size-4" /> Add transaction
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card className="p-4"><p className="text-xs font-semibold text-muted-foreground">Income</p><p className="mt-2 font-display text-2xl font-extrabold text-primary">{money(totals.income)}</p></Card>
+        <Card className="p-4"><p className="text-xs font-semibold text-muted-foreground">Expenses</p><p className="mt-2 font-display text-2xl font-extrabold">{money(totals.expenses)}</p></Card>
+        <Card className="p-4"><p className="text-xs font-semibold text-muted-foreground">Cash flow</p><p className="mt-2 font-display text-2xl font-extrabold">{money(totals.income - totals.expenses)}</p></Card>
+      </div>
+
+      <Card className="overflow-hidden">
+        <div className="border-b border-border bg-muted/20 p-4">
+          <div className="flex flex-wrap gap-2">
+            {[
+              ['all', 'All'],
+              ['income', 'Income'],
+              ['expense', 'Expenses'],
+              ['transfer', 'Transfers'],
+            ].map(([value, label]) => (
+              <button key={value} onClick={() => setTypeFilter(value as typeof typeFilter)} className={'rounded-xl px-3 py-2 text-xs font-bold ' + (typeFilter === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground')}>{label}</button>
+            ))}
+          </div>
+
+          <div className="mt-3 flex flex-col gap-3 lg:flex-row">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search amount, category, description, payee..." className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 text-xs outline-none focus:border-primary" />
+            </div>
+            <select value={period} onChange={(event) => setPeriod(event.target.value as typeof period)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs font-semibold">
+              <option value="this-month">This month</option>
+              <option value="last-month">Last month</option>
+              <option value="30-days">Last 30 days</option>
+              <option value="custom">Custom period</option>
+            </select>
+          </div>
+
+          {period === 'custom' && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs" />
+              <input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs" />
+            </div>
+          )}
+
+          {showFilters && (
+            <div className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2 lg:grid-cols-4">
+              <select value={accountFilter} onChange={(event) => setAccountFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs">
+                <option value="all">All accounts</option>{accounts.map((account) => <option key={account}>{account}</option>)}
+              </select>
+              <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs">
+                <option value="all">All categories</option>{categories.map((category) => <option key={category}>{category}</option>)}
+              </select>
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs">
+                <option value="all">All statuses</option><option value="cleared">Cleared</option><option value="not-cleared">Not cleared</option><option value="planned">Planned</option>
+              </select>
+              <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs">
+                <option value="all">All classes</option>{classes.map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+
+        <div className="divide-y divide-border">
+          {filtered.map((row) => (
+            <button key={row.id} onClick={() => setSelected(row)} className="flex w-full items-start gap-3 px-4 py-4 text-left hover:bg-primary/[0.03] sm:px-5">
+              <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted">
+                {row.type === 'income' && <ArrowDownLeft className="size-4 text-primary" />}
+                {row.type === 'expense' && <ArrowUpRight className="size-4" />}
+                {row.type === 'transfer' && <ArrowLeftRight className="size-4 text-primary" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-bold">{row.title}</p>
+                  {row.recurring && <span className="rounded-full bg-secondary px-2 py-0.5 text-[9px] font-bold">Recurring</span>}
+                  {row.status === 'planned' && <span className="rounded-full bg-muted px-2 py-0.5 text-[9px] font-bold">Planned</span>}
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">{row.date} · {row.account} · {row.category}</p>
+                {row.payee && <p className="mt-1 text-[11px] text-muted-foreground">{row.payee}</p>}
+              </div>
+              <div className="text-right">
+                <p className={'text-sm font-extrabold ' + (row.amount >= 0 ? 'text-primary' : 'text-destructive')}>{row.amount >= 0 ? '+' : ''}{money(row.amount)}</p>
+                <p className="mt-1 text-[10px] text-muted-foreground">{row.status === 'cleared' ? 'Cleared' : row.status === 'planned' ? 'Planned' : 'Not cleared'}</p>
+              </div>
+            </button>
+          ))}
+          {filtered.length === 0 && <div className="px-6 py-14 text-center text-sm text-muted-foreground">No transactions match the selected filters.</div>}
+        </div>
+      </Card>
+
+      {selected && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center">
+          <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-border bg-card shadow-2xl">
+            <div className="flex items-start justify-between border-b border-border px-6 py-5">
+              <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Transaction details</p><h3 className="mt-1 font-display text-2xl font-extrabold">{selected.title}</h3><p className="mt-1 text-xs text-muted-foreground">{selected.date} · {selected.account}</p></div>
+              <button onClick={() => setSelected(null)} className="grid size-9 place-items-center rounded-xl hover:bg-muted"><X className="size-5" /></button>
+            </div>
+            <div className="grid gap-3 p-6 sm:grid-cols-2">
+              <Card className="p-4"><p className="text-[11px] text-muted-foreground">Amount</p><p className={'mt-2 font-display text-2xl font-extrabold ' + (selected.amount >= 0 ? 'text-primary' : 'text-destructive')}>{selected.amount >= 0 ? '+' : ''}{money(selected.amount)}</p></Card>
+              <Card className="p-4"><p className="text-[11px] text-muted-foreground">Type</p><p className="mt-2 text-sm font-bold capitalize">{selected.type}</p></Card>
+              <Card className="p-4"><p className="text-[11px] text-muted-foreground">Category</p><p className="mt-2 text-sm font-bold">{selected.category}</p></Card>
+              <Card className="p-4"><p className="text-[11px] text-muted-foreground">Status</p><p className="mt-2 text-sm font-bold">{selected.status}</p></Card>
+              <Card className="p-4 sm:col-span-2"><p className="text-[11px] text-muted-foreground">Payee / Description</p><p className="mt-2 text-sm font-bold">{selected.payee || '—'}</p><p className="mt-1 text-xs text-muted-foreground">{selected.description || '—'}</p></Card>
+            </div>
+            <div className="flex justify-end border-t border-border p-4"><button onClick={() => setSelected(null)} className="h-10 rounded-xl border border-border px-4 text-xs font-bold">Close</button></div>
+          </div>
+        </div>
+      )}
+
+      {showAdd && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-foreground/20 p-3 backdrop-blur-sm sm:items-center">
+          <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-border bg-card shadow-2xl">
+            <div className="flex items-start justify-between border-b border-border px-6 py-5">
+              <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Checkbook</p><h3 className="mt-1 font-display text-2xl font-extrabold">Add transaction</h3><p className="mt-1 text-xs text-muted-foreground">Record an actual or planned transaction.</p></div>
+              <button onClick={() => setShowAdd(false)} className="grid size-9 place-items-center rounded-xl hover:bg-muted"><X className="size-5" /></button>
+            </div>
+            <form onSubmit={addTransaction} className="space-y-5 p-6">
+              <div className="grid gap-2 sm:grid-cols-4">
+                <label className="rounded-xl border border-border p-3 text-center text-xs font-bold"><input className="sr-only" type="radio" name="type" value="expense" defaultChecked />Expense</label>
+                <label className="rounded-xl border border-border p-3 text-center text-xs font-bold"><input className="sr-only" type="radio" name="type" value="income" />Income</label>
+                <label className="rounded-xl border border-border p-3 text-center text-xs font-bold"><input className="sr-only" type="radio" name="type" value="transfer" />Transfer</label>
+                <label className="rounded-xl border border-border p-3 text-center text-xs font-bold"><input className="sr-only" type="radio" name="type" value="income" />Planned</label>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label><span className="mb-2 block text-xs font-bold">Amount *</span><input name="amount" required type="number" step="0.01" min="0" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm" /></label>
+                <label><span className="mb-2 block text-xs font-bold">Date *</span><input name="date" required type="date" defaultValue="2026-09-20" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm" /></label>
+                <label><span className="mb-2 block text-xs font-bold">Account *</span><select name="account" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm">{accountRows.map((account) => <option key={account.name}>{account.name}</option>)}</select></label>
+                <label><span className="mb-2 block text-xs font-bold">Category *</span><select name="category" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm">{categories.map((category) => <option key={category}>{category}</option>)}</select></label>
+                <label><span className="mb-2 block text-xs font-bold">Payee</span><input name="payee" placeholder="Who did you pay / receive from?" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm" /></label>
+                <label><span className="mb-2 block text-xs font-bold">Check #</span><input name="checkNumber" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm" /></label>
+                <label><span className="mb-2 block text-xs font-bold">Class</span><select name="className" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"><option>Personal</option><option>Business</option><option>Travel</option></select></label>
+                <label><span className="mb-2 block text-xs font-bold">Status</span><select name="status" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"><option value="cleared">Cleared</option><option value="not-cleared">Not cleared</option><option value="planned">Planned</option></select></label>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-semibold"><input name="recurring" type="checkbox" /> Recurring transaction</label>
+              <label><span className="mb-2 block text-xs font-bold">Description</span><textarea name="description" rows={3} className="w-full rounded-xl border border-input bg-background px-3 py-3 text-sm" placeholder="Description, notes or reference..." /></label>
+              <div className="flex justify-end gap-2 border-t border-border pt-4"><button type="button" onClick={() => setShowAdd(false)} className="h-10 rounded-xl border border-border px-4 text-xs font-bold">Cancel</button><button type="submit" className="h-10 rounded-xl bg-primary px-5 text-xs font-bold text-primary-foreground">Save transaction</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -881,23 +1163,7 @@ export default function MoneyProPreview() {
             )}
 
             {screen === 'transactions' && (
-              <section className="space-y-5">
-                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-                  <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Register</p><h2 className="mt-1 font-display text-3xl font-extrabold">Transactions</h2><p className="mt-1 text-sm text-muted-foreground">Income, expenses, transfers and recurring entries.</p></div>
-                  <div className="flex gap-2"><button className="inline-flex h-10 items-center gap-2 rounded-xl border border-border px-4 text-sm font-bold"><Search className="size-4" />Search</button><button className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground"><Plus className="size-4" />Add transaction</button></div>
-                </div>
-                <Card className="overflow-hidden">
-                  <div className="flex flex-wrap gap-2 border-b border-border bg-muted/30 p-4">{['All', 'Income', 'Expenses', 'Transfers'].map((f, i) => <button key={f} className={'rounded-xl px-3 py-2 text-xs font-bold ' + (i === 0 ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted')}>{f}</button>)}</div>
-                  {transactionRows.map((row) => (
-                    <div key={row.date + row.title} className="grid grid-cols-[70px_1fr_auto] items-center gap-3 border-b border-border px-5 py-4 last:border-0 sm:grid-cols-[90px_1.5fr_1fr_auto]">
-                      <span className="text-xs text-muted-foreground">{row.date}</span>
-                      <div><p className="text-sm font-bold">{row.title}</p><p className="text-[11px] text-muted-foreground">{row.category}</p></div>
-                      <span className="hidden text-xs text-muted-foreground sm:block">{row.account}</span>
-                      <span className={'text-sm font-extrabold ' + (row.amount >= 0 ? 'text-primary' : '')}>{row.amount >= 0 ? '+' : ''}{money(row.amount)}</span>
-                    </div>
-                  ))}
-                </Card>
-              </section>
+              <TransactionsPreview />
             )}
 
             {screen === 'calendar' && (
