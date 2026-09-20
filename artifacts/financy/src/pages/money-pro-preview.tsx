@@ -80,6 +80,8 @@ function AccountsPreview() {
   const [filter, setFilter] = useState<'all' | 'cash' | 'bank' | 'investment' | 'card'>('all');
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [openAccountMenu, setOpenAccountMenu] = useState<string | null>(null);
+
   const [showAdd, setShowAdd] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<(typeof accountRows)[number] | null>(null);
   const [editingAccount, setEditingAccount] = useState<(typeof accountRows)[number] | null>(null);
@@ -177,6 +179,13 @@ function AccountsPreview() {
         account.name.toLowerCase().includes(transaction.account.toLowerCase().split(' ')[0]),
       ),
     );
+  }
+
+  function openEditAccount(account: (typeof accountRows)[number]) {
+    setSelectedAccount(null);
+    setEditingAccount(account);
+    setAccountFormType(account.type === 'Credit card' ? 'Credit card' : account.type === 'Cash' ? 'Cash' : account.type === 'Investment' ? 'Bank' : account.type);
+    setShowAdd(true);
   }
 
   function submitAccount(event: React.FormEvent<HTMLFormElement>) {
@@ -342,11 +351,23 @@ function AccountsPreview() {
                 aria-label={'Edit ' + account.name}
                 onClick={(event) => {
                   event.stopPropagation();
-                  openEditAccount(account);
+                  setOpenAccountMenu((current) => current === account.name ? null : account.name);
                 }}
-                className="hidden size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground sm:grid"
+                className="relative hidden size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground sm:grid"
               >
                 <MoreHorizontal className="size-4" />
+                {openAccountMenu === account.name && (
+                  <span
+                    className="absolute right-0 top-9 z-30 whitespace-nowrap rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground shadow-lg"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setOpenAccountMenu(null);
+                      openAccountDetails(account);
+                    }}
+                  >
+                    Open account
+                  </span>
+                )}
               </button>
             </div>
           ))}
