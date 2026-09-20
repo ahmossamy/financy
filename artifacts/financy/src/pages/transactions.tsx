@@ -43,6 +43,7 @@ type Transaction = {
   description: string | null;
   notes: string | null;
   status: string;
+  transfer_id: string | null;
 };
 
 type TransactionForm = {
@@ -209,7 +210,7 @@ export default function Transactions({
         supabase
           .from('transactions')
           .select(
-            'id, account_id, category_id, type, amount, currency_code, transaction_date, description, notes, status',
+            'id, account_id, category_id, type, amount, currency_code, transaction_date, description, notes, status, transfer_id',
           )
           .eq('user_id', user.id)
           .in('type', ['income', 'expense', 'transfer'])
@@ -369,24 +370,57 @@ export default function Transactions({
     setModalOpen(true);
   }
 
-  function openEditModal(transaction: Transaction) {
+  async function openEditModal(transaction: Transaction) {
     const meta = getMeta(transaction.notes);
     setEditingTransaction(transaction);
     setModalType(transaction.type);
-    setForm({
-      account_id: transaction.account_id ?? '',
-      category_id: transaction.category_id ?? '',
-      amount: String(transaction.amount ?? ''),
-      currency_code: transaction.currency_code,
-      transaction_date: transaction.transaction_date,
-      payee: meta.payee,
-      payment_method: meta.paymentMethod,
-      tag: meta.tag,
-      notes: getDisplayNotes(transaction.notes),
-    });
     setAttachmentName('');
     setCreateAnother(false);
     setError('');
+
+    if (transaction.type === 'transfer' && transaction.transfer_id) {
+      const { data: transfer, error: transferError } = await supabase
+        .from('transfers')
+        .select('id, from_account_id, to_account_id, amount, currency_code, received_amount, exchange_rate, fee, transfer_date, notes')
+        .eq('id', transaction.transfer_id)
+        .single();
+
+      if (transferError || !transfer) {
+        setError(transferError?.message || 'Unable to load transfer details.');
+        return;
+      }
+
+      const fromAccount = accounts.find((item) => item.id === transfer.from_account_id);
+      const toAccount = accounts.find((item) => item.id === transfer.to_account_id);
+
+      setTransferForm({
+        from_account_id: transfer.from_account_id,
+        to_account_id: transfer.to_account_id,
+        sent_amount: String(transfer.amount ?? ''),
+        received_amount: String(transfer.received_amount ?? ''),
+        sent_currency: fromAccount?.currency_code ?? transfer.currency_code,
+        received_currency: toAccount?.currency_code ?? transfer.currency_code,
+        exchange_rate: String(transfer.exchange_rate ?? '1'),
+        fee: String(transfer.fee ?? ''),
+        fee_currency: fromAccount?.currency_code ?? transfer.currency_code,
+        transaction_date: transfer.transfer_date,
+        notes: getDisplayNotes(transfer.notes),
+        tag: getMeta(transfer.notes).tag,
+      });
+    } else {
+      setForm({
+        account_id: transaction.account_id ?? '',
+        category_id: transaction.category_id ?? '',
+        amount: String(transaction.amount ?? ''),
+        currency_code: transaction.currency_code,
+        transaction_date: transaction.transaction_date,
+        payee: meta.payee,
+        payment_method: meta.paymentMethod,
+        tag: meta.tag,
+        notes: getDisplayNotes(transaction.notes),
+      });
+    }
+
     setModalOpen(true);
   }
 
@@ -405,58 +439,82 @@ export default function Transactions({
 
   async function handleTransferSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     if (!transferForm.from_account_id || !transferForm.to_account_id) {
       setError('Please select both source and destination accounts.');
       return;
     }
+
     if (transferForm.from_account_id === transferForm.to_account_id) {
       setError('Source and destination accounts must be different.');
       return;
     }
+
+    const fromAccount = accounts.find((item) => item.id === transferForm.from_account_id);
+    const toAccount = accounts.find((item) => item.id === transferForm.to_account_id);
+    if (!fromAccount || !toAccount) {
+      setError('Please select valid source and destination accounts.');
+      return;
+    }
+
     const sentAmount = Number(transferForm.sent_amount);
     const receivedAmount = Number(transferForm.received_amount);
     const exchangeRate = Number(transferForm.exchange_rate);
     const fee = transferForm.fee ? Number(transferForm.fee) : 0;
-    if (!Number.isFinite(sentAmount) || sentAmount <= 0) { setError('Amount to send must be greater than zero.'); return; }
-    if (!Number.isFinite(receivedAmount) || receivedAmount <= 0) { setError('Amount to receive must be greater than zero.'); return; }
-    if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) { setError('Exchange rate must be greater than zero.'); return; }
-    if (!Number.isFinite(fee) || fee < 0) { setError('Transfer fee cannot be negative.'); return; }
-    setSaving(true); setError('');
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setError('Your session has expired. Please sign in again.'); setSaving(false); return; }
 
-    const transferPayload = {
-      user_id: user.id,
-      from_account_id: transferForm.from_account_id,
-      to_account_id: transferForm.to_account_id,
-      amount: sentAmount,
-      currency_code: transferForm.sent_currency,
-      received_amount: receivedAmount,
-      exchange_rate: exchangeRate,
-      fee,
-      transfer_date: transferForm.transaction_date,
-      notes: [transferForm.tag.trim() ? `[Tag: ${transferForm.tag.trim()}]` : '', transferForm.notes.trim()].filter(Boolean).join('\n') || null,
-      status: 'completed',
-    };
-
-    const { data: transfer, error: transferError } = await supabase.from('transfers').insert(transferPayload).select('id').single();
-    if (transferError || !transfer) {
-      setError(transferError?.message || 'Unable to create transfer.'); setSaving(false); return;
+    if (!Number.isFinite(sentAmount) || sentAmount <= 0) {
+      setError('Amount to send must be greater than zero.');
+      return;
+    }
+    if (!Number.isFinite(receivedAmount) || receivedAmount <= 0) {
+      setError('Amount to receive must be greater than zero.');
+      return;
+    }
+    if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+      setError('Exchange rate must be greater than zero.');
+      return;
+    }
+    if (!Number.isFinite(fee) || fee < 0) {
+      setError('Transfer fee cannot be negative.');
+      return;
     }
 
-    const sourceTransaction = {
-      user_id: user.id, account_id: transferForm.from_account_id, category_id: null, type: 'transfer', amount: sentAmount, currency_code: transferForm.sent_currency, transaction_date: transferForm.transaction_date, description: 'Transfer', notes: transferPayload.notes, status: 'completed', transfer_id: transfer.id,
+    setSaving(true);
+    setError('');
+
+    const notes = [
+      transferForm.tag.trim() ? '[Tag: ' + transferForm.tag.trim() + ']' : '',
+      transferForm.notes.trim(),
+    ].filter(Boolean).join('\\n') || null;
+
+    const rpcArgs = {
+      p_from_account_id: transferForm.from_account_id,
+      p_to_account_id: transferForm.to_account_id,
+      p_amount: sentAmount,
+      p_received_amount: receivedAmount,
+      p_exchange_rate: exchangeRate,
+      p_fee: fee,
+      p_transfer_date: transferForm.transaction_date,
+      p_notes: notes,
+      p_tag: transferForm.tag.trim() || null,
     };
-    const destinationTransaction = {
-      user_id: user.id, account_id: transferForm.to_account_id, category_id: null, type: 'transfer', amount: receivedAmount, currency_code: transferForm.received_currency, transaction_date: transferForm.transaction_date, description: 'Transfer', notes: transferPayload.notes, status: 'completed', transfer_id: transfer.id,
-    };
-    const { error: txError } = await supabase.from('transactions').insert([sourceTransaction, destinationTransaction]);
-    if (txError) {
-      await supabase.from('transfers').delete().eq('id', transfer.id).eq('user_id', user.id);
-      setError(txError.message); setSaving(false); return;
+
+    const { error: transferError } = editingTransaction?.transfer_id
+      ? await supabase.rpc('financy_update_transfer', {
+          p_transfer_id: editingTransaction.transfer_id,
+          ...rpcArgs,
+        })
+      : await supabase.rpc('financy_create_transfer', rpcArgs);
+
+    if (transferError) {
+      setError(transferError.message);
+      setSaving(false);
+      return;
     }
 
-    setSaving(false); setModalOpen(false); setEditingTransaction(null);
+    setSaving(false);
+    setModalOpen(false);
+    setEditingTransaction(null);
     await loadData();
   }
 
@@ -535,12 +593,27 @@ export default function Transactions({
   }
 
   async function deleteTransaction(transaction: Transaction) {
-    const confirmed = window.confirm(
-      `Delete "${transaction.description || transaction.type}"?`,
-    );
+    const label = transaction.transfer_id ? 'this transfer' : '"' + (transaction.description || transaction.type) + '"';
+    const confirmed = window.confirm('Delete ' + label + '?');
     if (!confirmed) return;
 
     setError('');
+
+    if (transaction.transfer_id) {
+      const { error: deleteTransferError } = await supabase.rpc(
+        'financy_delete_transfer',
+        { p_transfer_id: transaction.transfer_id },
+      );
+
+      if (deleteTransferError) {
+        setError(deleteTransferError.message);
+        return;
+      }
+
+      await loadData();
+      return;
+    }
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
