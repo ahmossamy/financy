@@ -125,11 +125,31 @@ type TransactionRecord = {
 
 
 function InvestmentsPreview() {
-  type InvestmentTab = 'overview' | 'portfolios' | 'platforms' | 'assets' | 'activity';
+  type InvestmentTab = 'overview' | 'portfolios' | 'platforms' | 'assets' | 'buy-sell' | 'activity';
   type Holding = { id: string; asset: string; symbol: string; type: string; portfolio: string; platform: string; quantity: number; avgCost: number; price: number; currency: string };
 
   const [tab, setTab] = useState<InvestmentTab>('overview');
   const [showAdd, setShowAdd] = useState(false);
+  type InvestmentTrade = {
+    id: string;
+    date: string;
+    action: 'Buy' | 'Sell';
+    asset: string;
+    symbol: string;
+    portfolio: string;
+    platform: string;
+    account: string;
+    quantity: number;
+    price: number;
+    fees: number;
+    total: number;
+    currency: string;
+    notes: string;
+  };
+  const [trades, setTrades] = useState<InvestmentTrade[]>([]);
+  const [tradeModal, setTradeModal] = useState<'Buy' | 'Sell' | null>(null);
+  const [tradeSearch, setTradeSearch] = useState('');
+  const [tradeActionFilter, setTradeActionFilter] = useState<'all' | 'Buy' | 'Sell'>('all');
   type InvestmentAsset = {
     id: string;
     name: string;
@@ -1264,6 +1284,110 @@ function InvestmentsPreview() {
           </Card>
         );
       })()}
+
+      {tab === 'buy-sell' && (() => {
+        const visibleTrades = trades.filter((trade) => {
+          const actionMatch = tradeActionFilter === 'all' || trade.action === tradeActionFilter;
+          const searchMatch = !tradeSearch || [trade.asset, trade.symbol, trade.portfolio, trade.platform, trade.account, trade.notes].join(' ').toLowerCase().includes(tradeSearch.toLowerCase());
+          return actionMatch && searchMatch;
+        });
+
+        const saveTrade = (event: React.FormEvent<HTMLFormElement>) => {
+          event.preventDefault();
+          if (!tradeModal) return;
+          const form = new FormData(event.currentTarget);
+          const quantity = Number(form.get('quantity') || 0);
+          const price = Number(form.get('price') || 0);
+          const fees = Number(form.get('fees') || 0);
+          if (quantity <= 0 || price < 0 || fees < 0) return;
+          const total = quantity * price + (tradeModal === 'Buy' ? fees : -fees);
+          const trade: InvestmentTrade = {
+            id: 'trade-' + Date.now(),
+            date: String(form.get('date') || new Date().toISOString().slice(0, 10)),
+            action: tradeModal,
+            asset: String(form.get('asset') || ''),
+            symbol: String(form.get('symbol') || ''),
+            portfolio: String(form.get('portfolio') || ''),
+            platform: String(form.get('platform') || ''),
+            account: String(form.get('account') || ''),
+            quantity,
+            price,
+            fees,
+            total: Math.max(0, total),
+            currency: String(form.get('currency') || 'EGP'),
+            notes: String(form.get('notes') || ''),
+          };
+          setTrades((rows) => [trade, ...rows]);
+          setTradeModal(null);
+        };
+
+        return (
+          <Card className="p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="font-display text-xl font-extrabold">Buy / Sell</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Record investment trades and keep the transaction history separate from current holdings.</p>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setTradeModal('Buy')} className="h-10 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground">Buy</button>
+                <button type="button" onClick={() => setTradeModal('Sell')} className="h-10 rounded-xl border border-border px-4 text-xs font-bold">Sell</button>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-[1.5fr_1fr]">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <input value={tradeSearch} onChange={(event) => setTradeSearch(event.target.value)} placeholder="Search asset, portfolio, platform..." className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary" />
+              </div>
+              <select value={tradeActionFilter} onChange={(event) => setTradeActionFilter(event.target.value as typeof tradeActionFilter)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs font-semibold outline-none focus:border-primary">
+                <option value="all">All trades</option><option value="Buy">Buy</option><option value="Sell">Sell</option>
+              </select>
+            </div>
+
+            <div className="mt-5 overflow-x-auto rounded-2xl border border-border">
+              <table className="w-full min-w-[1100px] text-sm">
+                <thead><tr className="border-b border-border bg-muted/30 text-left text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                  <th className="px-3 py-3">Date</th><th className="px-3 py-3">Action</th><th className="px-3 py-3">Asset</th><th className="px-3 py-3">Portfolio</th><th className="px-3 py-3">Platform</th><th className="px-3 py-3">Account</th><th className="px-3 py-3 text-right">Qty</th><th className="px-3 py-3 text-right">Price</th><th className="px-3 py-3 text-right">Fees</th><th className="px-3 py-3 text-right">Total</th><th className="px-3 py-3">Currency</th>
+                </tr></thead>
+                <tbody>
+                  {visibleTrades.map((trade) => <tr key={trade.id} className="border-b border-border last:border-0">
+                    <td className="px-3 py-3 text-xs">{trade.date}</td><td className="px-3 py-3 font-bold">{trade.action}</td><td className="px-3 py-3"><p className="font-bold">{trade.symbol || trade.asset}</p><p className="text-[11px] text-muted-foreground">{trade.asset}</p></td><td className="px-3 py-3 text-xs">{trade.portfolio}</td><td className="px-3 py-3 text-xs">{trade.platform}</td><td className="px-3 py-3 text-xs">{trade.account}</td><td className="px-3 py-3 text-right text-xs">{trade.quantity.toLocaleString()}</td><td className="px-3 py-3 text-right text-xs">{money(trade.price, trade.currency)}</td><td className="px-3 py-3 text-right text-xs">{money(trade.fees, trade.currency)}</td><td className="px-3 py-3 text-right font-extrabold">{money(trade.total, trade.currency)}</td><td className="px-3 py-3 text-xs">{trade.currency}</td>
+                  </tr>)}
+                </tbody>
+              </table>
+            </div>
+
+            {visibleTrades.length === 0 && <div className="mt-5 rounded-2xl border border-dashed border-border p-8 text-center text-xs text-muted-foreground">No buy or sell transactions yet.</div>}
+
+            {tradeModal && (
+              <div className="fixed inset-0 z-[80] grid place-items-center bg-black/45 p-4">
+                <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-border bg-background p-6 shadow-2xl">
+                  <div className="flex items-center justify-between">
+                    <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Investment trade</p><h3 className="mt-1 font-display text-2xl font-extrabold">{tradeModal} investment</h3><p className="mt-1 text-xs text-muted-foreground">Record the trade details now. Account balance and holdings automation will be connected in the next transaction layer.</p></div>
+                    <button type="button" onClick={() => setTradeModal(null)} className="grid size-9 place-items-center rounded-xl border border-border"><X className="size-4" /></button>
+                  </div>
+                  <form onSubmit={saveTrade} className="mt-5 grid gap-4 sm:grid-cols-2">
+                    <label className="text-xs font-bold">Asset<select name="asset" required className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal">
+                      {assetRows.filter((row) => row.status === 'Active').map((asset) => <option key={asset.id} value={asset.name}>{asset.symbol ? asset.symbol + ' · ' : ''}{asset.name}</option>)}
+                    </select></label>
+                    <label className="text-xs font-bold">Symbol<input name="symbol" className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" placeholder="ORAS" /></label>
+                    <label className="text-xs font-bold">Portfolio<select name="portfolio" required className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal">{portfolioRows.filter((row) => row.status === 'Active').map((row) => <option key={row.id}>{row.name}</option>)}</select></label>
+                    <label className="text-xs font-bold">Platform<select name="platform" required className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal">{platformRows.filter((row) => row.status === 'Active').map((row) => <option key={row.id}>{row.name}</option>)}</select></label>
+                    <label className="text-xs font-bold">Payment / settlement account<input name="account" className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" placeholder="e.g. CIB Main Account" /></label>
+                    <label className="text-xs font-bold">Currency<select name="currency" className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"><option>EGP</option><option>USD</option><option>SAR</option><option>AED</option></select></label>
+                    <label className="text-xs font-bold">Date<input name="date" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" /></label>
+                    <label className="text-xs font-bold">Quantity<input name="quantity" type="number" min="0" step="any" required className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" /></label>
+                    <label className="text-xs font-bold">Price / unit<input name="price" type="number" min="0" step="any" required className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" /></label>
+                    <label className="text-xs font-bold">Fees<input name="fees" type="number" min="0" step="any" defaultValue="0" className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" /></label>
+                    <label className="text-xs font-bold sm:col-span-2">Notes<textarea name="notes" rows={3} className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-3 text-sm font-normal" /></label>
+                    <div className="sm:col-span-2 flex justify-end gap-2"><button type="button" onClick={() => setTradeModal(null)} className="h-11 rounded-xl border border-border px-4 text-sm font-bold">Cancel</button><button type="submit" className="h-11 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground">Save {tradeModal}</button></div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </Card>
+        );
+      })}
 
       {tab === 'activity' && <Card className="p-5"><div><h3 className="font-display text-xl font-extrabold">Investment activity</h3><p className="mt-1 text-xs text-muted-foreground">Buy, sell and dividend transactions.</p></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[700px] text-sm"><thead><tr className="border-b border-border text-left text-[10px] uppercase tracking-[0.08em] text-muted-foreground"><th className="px-3 py-3">Date</th><th className="px-3 py-3">Action</th><th className="px-3 py-3">Asset</th><th className="px-3 py-3">Portfolio</th><th className="px-3 py-3">Platform</th><th className="px-3 py-3 text-right">Amount</th></tr></thead><tbody>{activity.map((row) => <tr key={row.date+row.asset} className="border-b border-border last:border-0"><td className="px-3 py-3 text-xs">{row.date}</td><td className="px-3 py-3 font-bold">{row.action}</td><td className="px-3 py-3 font-bold">{row.asset}</td><td className="px-3 py-3 text-xs">{row.portfolio}</td><td className="px-3 py-3 text-xs">{row.platform}</td><td className="px-3 py-3 text-right font-bold">{money(row.amount)}</td></tr>)}</tbody></table></div></Card>}
 
