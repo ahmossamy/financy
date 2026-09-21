@@ -603,26 +603,26 @@ function InvestmentsPreview() {
   }
 
   return (
-    <section className="space-y-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <section className="w-full min-w-0 space-y-4 sm:space-y-5">
+      <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Investments</p>
-          <h2 className="mt-1 font-display text-3xl font-extrabold">Investments</h2>
+          <h2 className="mt-1 font-display text-2xl font-extrabold sm:text-3xl">Investments</h2>
           <p className="mt-1 text-sm text-muted-foreground">Track portfolios, platforms, holdings, transactions and performance.</p>
         </div>
-        <button type="button" onClick={() => setShowAdd(true)} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm"><Plus className="size-4" /> Add investment</button>
+        <button type="button" onClick={() => setShowAdd(true)} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm sm:w-auto"><Plus className="size-4" /> Add investment</button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="p-5"><p className="text-xs text-muted-foreground">Current value</p><p className="mt-2 text-2xl font-extrabold">{money(currentValue)}</p><p className="mt-1 text-[11px] text-muted-foreground">Across all portfolios</p></Card>
-        <Card className="p-5"><p className="text-xs text-muted-foreground">Invested</p><p className="mt-2 text-2xl font-extrabold">{money(invested)}</p><p className="mt-1 text-[11px] text-muted-foreground">Total cost basis</p></Card>
-        <Card className="p-5"><p className="text-xs text-muted-foreground">Unrealized gain</p><p className="mt-2 text-2xl font-extrabold text-primary">{money(unrealized)}</p><p className="mt-1 text-[11px] text-primary">+{returnPct.toFixed(1)}%</p></Card>
-        <Card className="p-5"><p className="text-xs text-muted-foreground">Holdings</p><p className="mt-2 text-2xl font-extrabold">{holdings.length}</p><p className="mt-1 text-[11px] text-muted-foreground">{platforms.length} platforms</p></Card>
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 xl:grid-cols-4">
+        <Card className="min-w-0 p-3 sm:p-5"><p className="text-[10px] text-muted-foreground sm:text-xs">Current value</p><p className="mt-1 truncate text-lg font-extrabold sm:mt-2 sm:text-2xl">{money(currentValue)}</p><p className="mt-1 text-[11px] text-muted-foreground">Across all portfolios</p></Card>
+        <Card className="min-w-0 p-3 sm:p-5"><p className="text-[10px] text-muted-foreground sm:text-xs">Invested</p><p className="mt-1 truncate text-lg font-extrabold sm:mt-2 sm:text-2xl">{money(invested)}</p><p className="mt-1 text-[11px] text-muted-foreground">Total cost basis</p></Card>
+        <Card className="min-w-0 p-3 sm:p-5"><p className="text-[10px] text-muted-foreground sm:text-xs">Unrealized gain</p><p className="mt-1 truncate text-lg font-extrabold text-primary sm:mt-2 sm:text-2xl">{money(unrealized)}</p><p className="mt-1 text-[11px] text-primary">+{returnPct.toFixed(1)}%</p></Card>
+        <Card className="min-w-0 p-3 sm:p-5"><p className="text-[10px] text-muted-foreground sm:text-xs">Holdings</p><p className="mt-1 text-lg font-extrabold sm:mt-2 sm:text-2xl">{holdings.length}</p><p className="mt-1 text-[11px] text-muted-foreground">{platforms.length} platforms</p></Card>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto rounded-2xl border border-border bg-card p-2">
-        {[['overview','Overview'],['portfolios','Portfolios'],['platforms','Platforms'],['assets','Assets'],['activity','Activity']].map(([value,label]) => (
-          <button key={value} type="button" onClick={() => setTab(value as InvestmentTab)} className={'shrink-0 rounded-xl px-4 py-2.5 text-xs font-bold ' + (tab === value ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted')}>{label}</button>
+      <div className="grid w-full grid-cols-3 gap-1.5 rounded-2xl border border-border bg-card p-1.5 sm:flex sm:gap-2 sm:overflow-x-auto sm:p-2">
+        {[['overview','Overview'],['portfolios','Portfolios'],['platforms','Platforms'],['assets','Assets'],['buy-sell','Buy / Sell'],['activity','Activity']].map(([value,label]) => (
+          <button key={value} type="button" onClick={() => setTab(value as InvestmentTab)} className={'min-w-0 rounded-xl px-2 py-2.5 text-[10px] font-bold sm:shrink-0 sm:px-4 sm:text-xs ' + (tab === value ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted')}>{label}</button>
         ))}
       </div>
 
@@ -2796,7 +2796,7 @@ export default function MoneyProPreview() {
           </button>
         </aside>
 
-        <main className="min-w-0 flex-1">
+        <main className="min-w-0 w-full flex-1">
           <header className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur-md sm:px-7">
             <div className="flex items-center gap-3">
               <button
@@ -2824,7 +2824,7 @@ export default function MoneyProPreview() {
             </div>
           </header>
 
-          <div className="mx-auto max-w-[1380px] space-y-6 p-4 sm:p-7 lg:p-9">
+          <div className="mx-auto w-full max-w-[1380px] min-w-0 space-y-4 p-3 sm:space-y-6 sm:p-7 lg:p-9">
             {screen === 'overview' && (
               <>
                 <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
