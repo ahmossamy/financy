@@ -187,6 +187,10 @@ function InvestmentsPreview() {
   const [editingPortfolio, setEditingPortfolio] = useState<Portfolio | null>(null);
   const [portfolioLoading, setPortfolioLoading] = useState(false);
   const [portfolioConnected, setPortfolioConnected] = useState(false);
+  const [selectedPortfolio, setSelectedPortfolio] = useState<Portfolio | null>(null);
+  const [portfolioAssetTypeFilter, setPortfolioAssetTypeFilter] = useState('all');
+  const [portfolioPlatformFilter, setPortfolioPlatformFilter] = useState('all');
+  const [portfolioHoldingSearch, setPortfolioHoldingSearch] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -486,15 +490,41 @@ function InvestmentsPreview() {
                 const gain = value - investedValue;
                 const pct = investedValue ? (gain / investedValue) * 100 : 0;
                 return (
-                  <div key={row.id} className="rounded-2xl border border-border p-4">
+                  <button
+                    key={row.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedPortfolio(row);
+                      setPortfolioAssetTypeFilter('all');
+                      setPortfolioPlatformFilter('all');
+                      setPortfolioHoldingSearch('');
+                    }}
+                    className="w-full rounded-2xl border border-border p-4 text-left transition hover:border-primary/40 hover:bg-primary/[0.025]"
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-bold">{row.name}</p>
                         <p className="mt-1 text-[11px] text-muted-foreground">{row.type} · {row.currency}</p>
                       </div>
-                      <button type="button" onClick={() => openPortfolioModal(row)} className="grid size-8 place-items-center rounded-lg border border-border hover:bg-muted" title="Edit portfolio">
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openPortfolioModal(row);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            openPortfolioModal(row);
+                          }
+                        }}
+                        className="grid size-8 place-items-center rounded-lg border border-border hover:bg-muted"
+                        title="Edit portfolio"
+                      >
                         <MoreHorizontal className="size-4" />
-                      </button>
+                      </span>
                     </div>
                     <p className="mt-5 text-2xl font-extrabold">{money(value, row.currency)}</p>
                     <div className="mt-3 flex items-center justify-between text-[11px]">
@@ -510,7 +540,8 @@ function InvestmentsPreview() {
                     </div>
                     {row.description && <p className="mt-3 line-clamp-2 text-[11px] text-muted-foreground">{row.description}</p>}
                     <span className={'mt-3 inline-flex rounded-full px-2 py-1 text-[10px] font-bold ' + (row.status === 'Active' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground')}>{row.status}</span>
-                  </div>
+                    <p className="mt-3 text-[10px] font-bold text-primary">Click to view portfolio details</p>
+                  </button>
                 );
               })}
             </div>
@@ -521,6 +552,129 @@ function InvestmentsPreview() {
                 <p className="mt-1 text-xs text-muted-foreground">Create a portfolio or change the filter.</p>
               </div>
             )}
+
+            {selectedPortfolio && (() => {
+              const portfolioHoldings = holdings.filter((holding) => holding.portfolio === selectedPortfolio.name);
+              const portfolioValue = portfolioHoldings.reduce((sum, holding) => sum + holding.quantity * holding.price, 0);
+              const portfolioInvested = portfolioHoldings.reduce((sum, holding) => sum + holding.quantity * holding.avgCost, 0);
+              const portfolioGain = portfolioValue - portfolioInvested;
+              const portfolioReturn = portfolioInvested ? (portfolioGain / portfolioInvested) * 100 : 0;
+              const assetTypes = Array.from(new Set(portfolioHoldings.map((holding) => holding.type))).sort();
+              const platformNames = Array.from(new Set(portfolioHoldings.map((holding) => holding.platform))).sort();
+              const filteredHoldings = portfolioHoldings.filter((holding) => {
+                const typeMatch = portfolioAssetTypeFilter === 'all' || holding.type === portfolioAssetTypeFilter;
+                const platformMatch = portfolioPlatformFilter === 'all' || holding.platform === portfolioPlatformFilter;
+                const searchMatch = !portfolioHoldingSearch || [holding.asset, holding.symbol, holding.type, holding.platform, holding.currency].join(' ').toLowerCase().includes(portfolioHoldingSearch.toLowerCase());
+                return typeMatch && platformMatch && searchMatch;
+              });
+
+              return (
+                <div className="fixed inset-0 z-[70] flex items-end justify-center bg-foreground/30 p-3 backdrop-blur-sm sm:items-center sm:p-6">
+                  <div className="max-h-[94vh] w-full max-w-7xl overflow-y-auto rounded-[28px] border border-border bg-card shadow-2xl">
+                    <div className="sticky top-0 z-20 border-b border-border bg-card px-5 py-5 sm:px-6">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Portfolio details</p>
+                          <h3 className="mt-1 font-display text-2xl font-extrabold">{selectedPortfolio.name}</h3>
+                          <p className="mt-1 text-sm text-muted-foreground">{selectedPortfolio.type} · {selectedPortfolio.currency} · {selectedPortfolio.status}</p>
+                        </div>
+                        <button type="button" onClick={() => setSelectedPortfolio(null)} className="grid size-9 shrink-0 place-items-center rounded-xl border border-border hover:bg-muted">
+                          <X className="size-4" />
+                        </button>
+                      </div>
+
+                      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                        <Card className="p-4"><p className="text-[11px] text-muted-foreground">Current value</p><p className="mt-2 text-xl font-extrabold">{money(portfolioValue, selectedPortfolio.currency)}</p></Card>
+                        <Card className="p-4"><p className="text-[11px] text-muted-foreground">Invested</p><p className="mt-2 text-xl font-extrabold">{money(portfolioInvested, selectedPortfolio.currency)}</p></Card>
+                        <Card className="p-4"><p className="text-[11px] text-muted-foreground">Change</p><p className={'mt-2 text-xl font-extrabold ' + (portfolioGain >= 0 ? 'text-primary' : 'text-destructive')}>{portfolioGain >= 0 ? '+' : ''}{money(portfolioGain, selectedPortfolio.currency)}</p></Card>
+                        <Card className="p-4"><p className="text-[11px] text-muted-foreground">Return</p><p className={'mt-2 text-xl font-extrabold ' + (portfolioReturn >= 0 ? 'text-primary' : 'text-destructive')}>{portfolioReturn >= 0 ? '+' : ''}{portfolioReturn.toFixed(2)}%</p></Card>
+                        <Card className="p-4"><p className="text-[11px] text-muted-foreground">Holdings</p><p className="mt-2 text-xl font-extrabold">{portfolioHoldings.length}</p></Card>
+                      </div>
+
+                      {selectedPortfolio.description && <p className="mt-4 text-xs text-muted-foreground">{selectedPortfolio.description}</p>}
+
+                      <div className="mt-5 grid gap-3 md:grid-cols-[1.5fr_1fr_1fr]">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                          <input value={portfolioHoldingSearch} onChange={(event) => setPortfolioHoldingSearch(event.target.value)} placeholder="Search asset, symbol, platform..." className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary" />
+                        </div>
+                        <select value={portfolioAssetTypeFilter} onChange={(event) => setPortfolioAssetTypeFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs font-semibold outline-none focus:border-primary">
+                          <option value="all">All asset types</option>
+                          {assetTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                        </select>
+                        <select value={portfolioPlatformFilter} onChange={(event) => setPortfolioPlatformFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs font-semibold outline-none focus:border-primary">
+                          <option value="all">All platforms</option>
+                          {platformNames.map((platform) => <option key={platform} value={platform}>{platform}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="p-5 sm:p-6">
+                      <Card className="overflow-hidden">
+                        <div className="border-b border-border px-4 py-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <h4 className="font-display text-lg font-extrabold">Portfolio assets</h4>
+                              <p className="mt-1 text-[11px] text-muted-foreground">Every holding, its value, change, allocation and investment platform.</p>
+                            </div>
+                            <span className="text-[11px] font-bold text-muted-foreground">{filteredHoldings.length} of {portfolioHoldings.length}</span>
+                          </div>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[1050px] text-sm">
+                            <thead>
+                              <tr className="border-b border-border bg-muted/30 text-left text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                                <th className="px-4 py-3">Asset</th>
+                                <th className="px-4 py-3">Type</th>
+                                <th className="px-4 py-3">Platform</th>
+                                <th className="px-4 py-3 text-right">Quantity</th>
+                                <th className="px-4 py-3 text-right">Avg. cost</th>
+                                <th className="px-4 py-3 text-right">Current price</th>
+                                <th className="px-4 py-3 text-right">Invested</th>
+                                <th className="px-4 py-3 text-right">Value</th>
+                                <th className="px-4 py-3 text-right">Change</th>
+                                <th className="px-4 py-3 text-right">Portfolio %</th>
+                                <th className="px-4 py-3">Currency</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredHoldings.map((holding) => {
+                                const investedValue = holding.quantity * holding.avgCost;
+                                const value = holding.quantity * holding.price;
+                                const change = value - investedValue;
+                                const changePct = investedValue ? (change / investedValue) * 100 : 0;
+                                const allocation = portfolioValue ? (value / portfolioValue) * 100 : 0;
+                                return (
+                                  <tr key={holding.id} className="border-b border-border last:border-0">
+                                    <td className="px-4 py-3">
+                                      <p className="font-bold">{holding.symbol || holding.asset}</p>
+                                      <p className="text-[11px] text-muted-foreground">{holding.asset}</p>
+                                    </td>
+                                    <td className="px-4 py-3 text-xs font-semibold">{holding.type}</td>
+                                    <td className="px-4 py-3 text-xs font-semibold">{holding.platform}</td>
+                                    <td className="px-4 py-3 text-right text-xs">{holding.quantity.toLocaleString()}</td>
+                                    <td className="px-4 py-3 text-right text-xs">{money(holding.avgCost, holding.currency)}</td>
+                                    <td className="px-4 py-3 text-right text-xs font-semibold">{money(holding.price, holding.currency)}</td>
+                                    <td className="px-4 py-3 text-right text-xs">{money(investedValue, holding.currency)}</td>
+                                    <td className="px-4 py-3 text-right text-xs font-extrabold">{money(value, holding.currency)}</td>
+                                    <td className={'px-4 py-3 text-right text-xs font-bold ' + (change >= 0 ? 'text-primary' : 'text-destructive')}>
+                                      {change >= 0 ? '+' : ''}{money(change, holding.currency)}<span className="ml-1 text-[10px]">({change >= 0 ? '+' : ''}{changePct.toFixed(2)}%)</span>
+                                    </td>
+                                    <td className="px-4 py-3 text-right text-xs font-extrabold">{allocation.toFixed(2)}%</td>
+                                    <td className="px-4 py-3 text-xs">{holding.currency}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        {filteredHoldings.length === 0 && <div className="px-5 py-12 text-center text-xs text-muted-foreground">No assets match the selected filters.</div>}
+                      </Card>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {portfolioModal && (
               <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4">
