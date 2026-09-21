@@ -188,6 +188,31 @@ function InvestmentsPreview() {
   const [portfolioLoading, setPortfolioLoading] = useState(false);
   const [portfolioConnected, setPortfolioConnected] = useState(false);
   const [selectedPortfolio, setSelectedPortfolio] = useState<Portfolio | null>(null);
+  type Platform = {
+    id: string;
+    name: string;
+    type: string;
+    currency: string;
+    accountReference: string;
+    notes: string;
+    status: 'Active' | 'Archived';
+  };
+
+  const demoPlatforms: Platform[] = [
+    { id: 'demo-platform-1', name: 'Thndr', type: 'Broker', currency: 'EGP', accountReference: '', notes: '', status: 'Active' },
+    { id: 'demo-platform-2', name: 'CIB', type: 'Bank / Funds', currency: 'EGP', accountReference: '', notes: '', status: 'Active' },
+    { id: 'demo-platform-3', name: 'Tilda', type: 'Investment Platform', currency: 'EGP', accountReference: '', notes: '', status: 'Active' },
+  ];
+
+  const [platformRows, setPlatformRows] = useState<Platform[]>(demoPlatforms);
+  const [platformFilter, setPlatformFilter] = useState<'active' | 'archived' | 'all'>('active');
+  const [platformSearch, setPlatformSearch] = useState('');
+  const [platformModal, setPlatformModal] = useState<'add' | 'edit' | null>(null);
+  const [editingPlatform, setEditingPlatform] = useState<Platform | null>(null);
+  const [platformConnected, setPlatformConnected] = useState(false);
+  const [platformLoading, setPlatformLoading] = useState(false);
+
+
   const [portfolioAssetTypeFilter, setPortfolioAssetTypeFilter] = useState('all');
   const [portfolioPlatformFilter, setPortfolioPlatformFilter] = useState('all');
   const [portfolioHoldingSearch, setPortfolioHoldingSearch] = useState('');
@@ -262,6 +287,66 @@ function InvestmentsPreview() {
     return () => {
       mounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const storageKey = 'financy-investment-platforms';
+
+    const loadPlatforms = async () => {
+      const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const loadLocal = () => {
+        try {
+          const stored = window.localStorage.getItem(storageKey);
+          if (!stored) return demoPlatforms;
+          const parsed = JSON.parse(stored);
+          return Array.isArray(parsed) && parsed.length ? parsed as Platform[] : demoPlatforms;
+        } catch {
+          return demoPlatforms;
+        }
+      };
+
+      if (!key || key === 'missing-publishable-key') {
+        if (mounted) {
+          setPlatformRows(loadLocal());
+          setPlatformConnected(false);
+        }
+        return;
+      }
+
+      setPlatformLoading(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('No authenticated user');
+        const { data, error } = await supabase.from('platforms')
+          .select('id,name,platform_type,currency_code,account_reference,notes,status')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true });
+        if (error) throw error;
+        if (mounted) {
+          setPlatformRows((data ?? []).map((row) => ({
+            id: row.id,
+            name: row.name,
+            type: String(row.platform_type).replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
+            currency: row.currency_code || 'EGP',
+            accountReference: row.account_reference || '',
+            notes: row.notes || '',
+            status: row.status === 'archived' ? 'Archived' : 'Active',
+          })));
+          setPlatformConnected(true);
+        }
+      } catch {
+        if (mounted) {
+          setPlatformRows(loadLocal());
+          setPlatformConnected(false);
+        }
+      } finally {
+        if (mounted) setPlatformLoading(false);
+      }
+    };
+
+    loadPlatforms();
+    return () => { mounted = false; };
   }, []);
 
   const visiblePortfolios = portfolioRows.filter((row) => {
@@ -705,7 +790,173 @@ function InvestmentsPreview() {
         );
       })()}
 
-      {tab === 'platforms' && <Card className="p-5"><div className="flex items-center justify-between"><div><h3 className="font-display text-xl font-extrabold">Platforms</h3><p className="mt-1 text-xs text-muted-foreground">Brokers, banks and investment platforms.</p></div><button type="button" className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-bold"><Plus className="size-3.5" /> Add platform</button></div><div className="mt-5 grid gap-4 md:grid-cols-3">{platforms.map((row) => <div key={row.name} className="rounded-2xl border border-border p-4"><p className="font-bold">{row.name}</p><p className="mt-1 text-[11px] text-muted-foreground">{row.type}</p><p className="mt-5 text-2xl font-extrabold">{money(row.value)}</p><p className="mt-2 text-[11px] text-muted-foreground">{row.holdings} holdings</p></div>)}</div></Card>}
+      {tab === 'platforms' && (() => {
+        const visiblePlatforms = platformRows.filter((row) => {
+          const statusMatch = platformFilter === 'all' || row.status.toLowerCase() === platformFilter;
+          const searchMatch = !platformSearch || [row.name, row.type, row.currency, row.accountReference, row.notes].join(' ').toLowerCase().includes(platformSearch.toLowerCase());
+          return statusMatch && searchMatch;
+        });
+
+        const openPlatformModal = (platform?: Platform) => {
+          setEditingPlatform(platform ?? null);
+          setPlatformModal(platform ? 'edit' : 'add');
+        };
+
+        return (
+          <Card className="p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="font-display text-xl font-extrabold">Platforms</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Manage brokers, banks, fund platforms and investment providers.</p>
+                <p className="mt-2 text-[10px] font-semibold text-muted-foreground">
+                  {platformLoading ? 'Loading platforms...' : platformConnected ? 'Saved to your Financy data' : 'Saved on this device until Supabase is connected'}
+                </p>
+              </div>
+              <button type="button" onClick={() => openPlatformModal()} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground">
+                <Plus className="size-3.5" /> Add platform
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-[1.5fr_repeat(3,minmax(0,1fr))]">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <input value={platformSearch} onChange={(event) => setPlatformSearch(event.target.value)} placeholder="Search platforms..." className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary" />
+              </div>
+              {[
+                ['active', 'Active'],
+                ['archived', 'Archived'],
+                ['all', 'All'],
+              ].map(([value, label]) => (
+                <button key={value} type="button" onClick={() => setPlatformFilter(value as typeof platformFilter)} className={'h-10 rounded-xl border px-3 text-xs font-bold ' + (platformFilter === value ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:bg-muted')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {visiblePlatforms.map((row) => {
+                const platformHoldings = holdings.filter((holding) => holding.platform === row.name);
+                const value = platformHoldings.reduce((sum, holding) => sum + holding.quantity * holding.price, 0);
+                const investedValue = platformHoldings.reduce((sum, holding) => sum + holding.quantity * holding.avgCost, 0);
+                const gain = value - investedValue;
+                const pct = investedValue ? (gain / investedValue) * 100 : 0;
+                return (
+                  <button key={row.id} type="button" onClick={() => openPlatformModal(row)} className="w-full rounded-2xl border border-border p-4 text-left transition hover:border-primary/40 hover:bg-primary/[0.025]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-bold">{row.name}</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">{row.type} · {row.currency}</p>
+                      </div>
+                      <MoreHorizontal className="size-4 text-muted-foreground" />
+                    </div>
+                    <p className="mt-5 text-2xl font-extrabold">{money(value, row.currency)}</p>
+                    <div className="mt-3 flex items-center justify-between text-[11px]">
+                      <span className="text-muted-foreground">Invested {money(investedValue, row.currency)}</span>
+                      <span className={gain >= 0 ? 'font-bold text-primary' : 'font-bold text-destructive'}>{gain >= 0 ? '+' : ''}{money(gain, row.currency)} ({gain >= 0 ? '+' : ''}{pct.toFixed(1)}%)</span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>{platformHoldings.length} holdings</span>
+                      <span>{row.status}</span>
+                    </div>
+                    {row.accountReference && <p className="mt-2 text-[10px] text-muted-foreground">Ref: {row.accountReference}</p>}
+                  </button>
+                );
+              })}
+            </div>
+
+            {visiblePlatforms.length === 0 && <div className="mt-5 rounded-2xl border border-dashed border-border p-8 text-center text-xs text-muted-foreground">No platforms found.</div>}
+
+            {platformModal && (
+              <div className="fixed inset-0 z-[60] grid place-items-center bg-black/45 p-4">
+                <div className="w-full max-w-xl rounded-3xl border border-border bg-background p-6 shadow-2xl">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-display text-2xl font-extrabold">{editingPlatform ? 'Edit platform' : 'New platform'}</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">Platform details are kept separate from investment assets and portfolios.</p>
+                    </div>
+                    <button type="button" onClick={() => { setPlatformModal(null); setEditingPlatform(null); }} className="grid size-9 place-items-center rounded-xl border border-border"><X className="size-4" /></button>
+                  </div>
+                  <form onSubmit={async (event) => {
+                    event.preventDefault();
+                    const form = new FormData(event.currentTarget);
+                    const name = String(form.get('name') || '').trim();
+                    if (!name) return;
+                    const next: Platform = {
+                      id: editingPlatform?.id ?? 'platform-' + Date.now(),
+                      name,
+                      type: String(form.get('type') || 'Broker'),
+                      currency: String(form.get('currency') || 'EGP'),
+                      accountReference: String(form.get('accountReference') || '').trim(),
+                      notes: String(form.get('notes') || '').trim(),
+                      status: String(form.get('status') || 'Active') as Platform['status'],
+                    };
+                    const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+                    if (!key || key === 'missing-publishable-key' || !platformConnected) {
+                      setPlatformRows((rows) => {
+                        const updated = editingPlatform ? rows.map((row) => row.id === editingPlatform.id ? next : row) : [next, ...rows];
+                        try { window.localStorage.setItem('financy-investment-platforms', JSON.stringify(updated)); } catch {}
+                        return updated;
+                      });
+                      setPlatformModal(null);
+                      setEditingPlatform(null);
+                      return;
+                    }
+                    try {
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (!user) throw new Error('No authenticated user');
+                      const payload = {
+                        user_id: user.id,
+                        name: next.name,
+                        platform_type: next.type.toLowerCase().replace(/\s+/g, '_'),
+                        currency_code: next.currency,
+                        account_reference: next.accountReference || null,
+                        notes: next.notes || null,
+                        status: next.status.toLowerCase(),
+                      };
+                      if (editingPlatform) {
+                        const { data, error } = await supabase.from('platforms').update(payload).eq('id', editingPlatform.id).eq('user_id', user.id).select('id,name,platform_type,currency_code,account_reference,notes,status').single();
+                        if (error) throw error;
+                        setPlatformRows((rows) => rows.map((row) => row.id === editingPlatform.id ? {
+                          id: data.id, name: data.name, type: String(data.platform_type).replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()), currency: data.currency_code || 'EGP', accountReference: data.account_reference || '', notes: data.notes || '', status: data.status === 'archived' ? 'Archived' : 'Active'
+                        } : row));
+                      } else {
+                        const { data, error } = await supabase.from('platforms').insert(payload).select('id,name,platform_type,currency_code,account_reference,notes,status').single();
+                        if (error) throw error;
+                        setPlatformRows((rows) => [{
+                          id: data.id, name: data.name, type: String(data.platform_type).replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()), currency: data.currency_code || 'EGP', accountReference: data.account_reference || '', notes: data.notes || '', status: data.status === 'archived' ? 'Archived' : 'Active'
+                        }, ...rows]);
+                      }
+                      setPlatformConnected(true);
+                      setPlatformModal(null);
+                      setEditingPlatform(null);
+                    } catch {
+                      setPlatformRows((rows) => {
+                        const updated = editingPlatform ? rows.map((row) => row.id === editingPlatform.id ? next : row) : [next, ...rows];
+                        try { window.localStorage.setItem('financy-investment-platforms', JSON.stringify(updated)); } catch {}
+                        return updated;
+                      });
+                      setPlatformConnected(false);
+                      setPlatformModal(null);
+                      setEditingPlatform(null);
+                    }
+                  }} className="mt-5 grid gap-4 sm:grid-cols-2">
+                    <label className="text-xs font-bold">Platform name<input name="name" required defaultValue={editingPlatform?.name ?? ''} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" placeholder="e.g. Thndr" /></label>
+                    <label className="text-xs font-bold">Type<select name="type" defaultValue={editingPlatform?.type ?? 'Broker'} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"><option>Broker</option><option>Bank / Funds</option><option>Investment Platform</option><option>Fund Manager</option><option>Gold Platform</option><option>Crypto Exchange</option><option>Other</option></select></label>
+                    <label className="text-xs font-bold">Currency<select name="currency" defaultValue={editingPlatform?.currency ?? 'EGP'} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"><option>EGP</option><option>USD</option><option>SAR</option><option>AED</option></select></label>
+                    <label className="text-xs font-bold">Account reference<input name="accountReference" defaultValue={editingPlatform?.accountReference ?? ''} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" placeholder="Optional reference" /></label>
+                    <label className="text-xs font-bold sm:col-span-2">Notes<textarea name="notes" defaultValue={editingPlatform?.notes ?? ''} rows={3} className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-3 text-sm font-normal" placeholder="Optional notes..." /></label>
+                    <label className="text-xs font-bold">Status<select name="status" defaultValue={editingPlatform?.status ?? 'Active'} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-normal"><option>Active</option><option>Archived</option></select></label>
+                    <div className="flex items-end justify-end gap-2">
+                      <button type="button" onClick={() => { setPlatformModal(null); setEditingPlatform(null); }} className="h-11 rounded-xl border border-border px-4 text-sm font-bold">Cancel</button>
+                      <button type="submit" className="h-11 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground">Save platform</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </Card>
+        );
+      })()}
 
       {tab === 'assets' && <Card className="p-5"><div className="flex items-center justify-between"><div><h3 className="font-display text-xl font-extrabold">Assets</h3><p className="mt-1 text-xs text-muted-foreground">Stocks, funds and other investment assets.</p></div><button type="button" onClick={() => setShowAdd(true)} className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-bold"><Plus className="size-3.5" /> Add holding</button></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b border-border text-left text-[10px] uppercase tracking-[0.08em] text-muted-foreground"><th className="px-3 py-3">Asset</th><th className="px-3 py-3">Type</th><th className="px-3 py-3">Qty</th><th className="px-3 py-3 text-right">Avg cost</th><th className="px-3 py-3 text-right">Price</th><th className="px-3 py-3 text-right">Value</th></tr></thead><tbody>{holdings.map((row) => <tr key={row.id} className="border-b border-border last:border-0"><td className="px-3 py-3"><p className="font-bold">{row.symbol || row.asset}</p><p className="text-[11px] text-muted-foreground">{row.asset}</p></td><td className="px-3 py-3 text-xs">{row.type}</td><td className="px-3 py-3">{row.quantity}</td><td className="px-3 py-3 text-right">{money(row.avgCost,row.currency)}</td><td className="px-3 py-3 text-right">{money(row.price,row.currency)}</td><td className="px-3 py-3 text-right font-bold">{money(row.quantity*row.price,row.currency)}</td></tr>)}</tbody></table></div></Card>}
 
