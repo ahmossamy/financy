@@ -190,12 +190,24 @@ function InvestmentsPreview() {
 
   useEffect(() => {
     let mounted = true;
+    const storageKey = 'financy-investment-portfolios';
+
+    const loadLocalPortfolios = () => {
+      try {
+        const stored = window.localStorage.getItem(storageKey);
+        if (!stored) return demoPortfolios;
+        const parsed = JSON.parse(stored);
+        return Array.isArray(parsed) && parsed.length ? parsed as Portfolio[] : demoPortfolios;
+      } catch {
+        return demoPortfolios;
+      }
+    };
 
     async function loadPortfolios() {
       const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
       if (!key || key === 'missing-publishable-key') {
         if (mounted) {
-          setPortfolioRows(demoPortfolios);
+          setPortfolioRows(loadLocalPortfolios());
           setPortfolioConnected(false);
         }
         return;
@@ -234,7 +246,7 @@ function InvestmentsPreview() {
         }
       } catch {
         if (mounted) {
-          setPortfolioRows(demoPortfolios);
+          setPortfolioRows(loadLocalPortfolios());
           setPortfolioConnected(false);
         }
       } finally {
@@ -278,7 +290,15 @@ function InvestmentsPreview() {
 
     const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
     if (!key || key === 'missing-publishable-key' || !portfolioConnected) {
-      setPortfolioRows((rows) => editingPortfolio ? rows.map((row) => row.id === editingPortfolio.id ? next : row) : [next, ...rows]);
+      setPortfolioRows((rows) => {
+        const updated = editingPortfolio
+          ? rows.map((row) => row.id === editingPortfolio.id ? next : row)
+          : [next, ...rows];
+        try {
+          window.localStorage.setItem('financy-investment-portfolios', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
       setPortfolioModal(null);
       setEditingPortfolio(null);
       return;
@@ -339,7 +359,15 @@ function InvestmentsPreview() {
       setPortfolioModal(null);
       setEditingPortfolio(null);
     } catch {
-      setPortfolioRows((rows) => editingPortfolio ? rows.map((row) => row.id === editingPortfolio.id ? next : row) : [next, ...rows]);
+      setPortfolioRows((rows) => {
+        const updated = editingPortfolio
+          ? rows.map((row) => row.id === editingPortfolio.id ? next : row)
+          : [next, ...rows];
+        try {
+          window.localStorage.setItem('financy-investment-portfolios', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
       setPortfolioModal(null);
       setEditingPortfolio(null);
       setPortfolioConnected(false);
@@ -426,7 +454,7 @@ function InvestmentsPreview() {
                 <h3 className="font-display text-xl font-extrabold">Portfolios</h3>
                 <p className="mt-1 text-xs text-muted-foreground">Create separate investment portfolios for wealth, retirement, education and other goals.</p>
                 <div className="mt-2 text-[10px] font-semibold">
-                  {portfolioLoading ? <span className="text-muted-foreground">Loading portfolios...</span> : portfolioConnected ? <span className="text-primary">Connected to your Financy data</span> : <span className="text-muted-foreground">Demo data · connect Supabase to save portfolios</span>}
+                  {portfolioLoading ? <span className="text-muted-foreground">Loading portfolios...</span> : portfolioConnected ? <span className="text-primary">Saved to your Financy data</span> : <span className="text-muted-foreground">Saved on this device until Supabase is connected</span>}
                 </div>
               </div>
               <button type="button" onClick={() => openPortfolioModal()} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground">
