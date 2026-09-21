@@ -583,17 +583,17 @@ function InvestmentsPreview() {
                         </button>
                       </div>
 
-                      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                        <Card className="p-4"><p className="text-[11px] text-muted-foreground">Current value</p><p className="mt-2 text-xl font-extrabold">{money(portfolioValue, selectedPortfolio.currency)}</p></Card>
-                        <Card className="p-4"><p className="text-[11px] text-muted-foreground">Invested</p><p className="mt-2 text-xl font-extrabold">{money(portfolioInvested, selectedPortfolio.currency)}</p></Card>
-                        <Card className="p-4"><p className="text-[11px] text-muted-foreground">Change</p><p className={'mt-2 text-xl font-extrabold ' + (portfolioGain >= 0 ? 'text-primary' : 'text-destructive')}>{portfolioGain >= 0 ? '+' : ''}{money(portfolioGain, selectedPortfolio.currency)}</p></Card>
-                        <Card className="p-4"><p className="text-[11px] text-muted-foreground">Return</p><p className={'mt-2 text-xl font-extrabold ' + (portfolioReturn >= 0 ? 'text-primary' : 'text-destructive')}>{portfolioReturn >= 0 ? '+' : ''}{portfolioReturn.toFixed(2)}%</p></Card>
-                        <Card className="p-4"><p className="text-[11px] text-muted-foreground">Holdings</p><p className="mt-2 text-xl font-extrabold">{portfolioHoldings.length}</p></Card>
+                      <div className="mt-5 grid grid-cols-2 gap-3">
+                        <Card className="p-3 sm:p-4"><p className="text-[10px] text-muted-foreground">Current value</p><p className="mt-1 text-lg font-extrabold sm:text-xl">{money(portfolioValue, selectedPortfolio.currency)}</p></Card>
+                        <Card className="p-3 sm:p-4"><p className="text-[10px] text-muted-foreground">Invested</p><p className="mt-1 text-lg font-extrabold sm:text-xl">{money(portfolioInvested, selectedPortfolio.currency)}</p></Card>
+                        <Card className="p-3 sm:p-4"><p className="text-[10px] text-muted-foreground">Change</p><p className={'mt-1 text-lg font-extrabold sm:text-xl ' + (portfolioGain >= 0 ? 'text-primary' : 'text-destructive')}>{portfolioGain >= 0 ? '+' : ''}{money(portfolioGain, selectedPortfolio.currency)}</p></Card>
+                        <Card className="p-3 sm:p-4"><p className="text-[10px] text-muted-foreground">Return</p><p className={'mt-1 text-lg font-extrabold sm:text-xl ' + (portfolioReturn >= 0 ? 'text-primary' : 'text-destructive')}>{portfolioReturn >= 0 ? '+' : ''}{portfolioReturn.toFixed(2)}%</p></Card>
+                        <Card className="col-span-2 p-3 sm:p-4"><div className="flex items-center justify-between"><p className="text-[10px] text-muted-foreground">Holdings</p><p className="text-lg font-extrabold sm:text-xl">{portfolioHoldings.length}</p></div></Card>
                       </div>
 
                       {selectedPortfolio.description && <p className="mt-4 text-xs text-muted-foreground">{selectedPortfolio.description}</p>}
 
-                      <div className="mt-5 grid gap-3 md:grid-cols-[1.5fr_1fr_1fr]">
+                      <div className="mt-4 grid gap-2 sm:grid-cols-[1.5fr_1fr_1fr]">
                         <div className="relative">
                           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                           <input value={portfolioHoldingSearch} onChange={(event) => setPortfolioHoldingSearch(event.target.value)} placeholder="Search asset, symbol, platform..." className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary" />
