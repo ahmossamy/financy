@@ -130,6 +130,40 @@ function InvestmentsPreview() {
 
   const [tab, setTab] = useState<InvestmentTab>('overview');
   const [showAdd, setShowAdd] = useState(false);
+  type InvestmentAsset = {
+    id: string;
+    name: string;
+    symbol: string;
+    type: string;
+    currency: string;
+    isin: string;
+    exchange: string;
+    sector: string;
+    notes: string;
+    status: 'Active' | 'Archived';
+  };
+
+  const demoAssets: InvestmentAsset[] = [
+    { id: 'asset-1', name: 'Orascom Construction', symbol: 'ORAS', type: 'Stock', currency: 'EGP', isin: '', exchange: 'EGX', sector: 'Construction', notes: '', status: 'Active' },
+    { id: 'asset-2', name: 'EFG Holding', symbol: 'EFID', type: 'Stock', currency: 'EGP', isin: '', exchange: 'EGX', sector: 'Financials', notes: '', status: 'Active' },
+    { id: 'asset-3', name: 'Telecom Egypt', symbol: 'ETEL', type: 'Stock', currency: 'EGP', isin: '', exchange: 'EGX', sector: 'Telecommunications', notes: '', status: 'Active' },
+    { id: 'asset-4', name: 'Abu Dhabi Islamic Bank', symbol: 'ADIB', type: 'Stock', currency: 'EGP', isin: '', exchange: 'EGX', sector: 'Financials', notes: '', status: 'Active' },
+    { id: 'asset-5', name: 'Elsewedy Electric', symbol: 'SWDY', type: 'Stock', currency: 'EGP', isin: '', exchange: 'EGX', sector: 'Industrials', notes: '', status: 'Active' },
+    { id: 'asset-6', name: 'Talaat Moustafa Group', symbol: 'TMGH', type: 'Stock', currency: 'EGP', isin: '', exchange: 'EGX', sector: 'Real Estate', notes: '', status: 'Active' },
+    { id: 'asset-7', name: 'Sharia Equity Fund', symbol: 'CI-SHARIA', type: 'Fund', currency: 'EGP', isin: '', exchange: '', sector: '', notes: '', status: 'Active' },
+  ];
+
+  const [assetRows, setAssetRows] = useState<InvestmentAsset[]>(demoAssets);
+  const [assetSearch, setAssetSearch] = useState('');
+  const [assetTypeFilter, setAssetTypeFilter] = useState('all');
+  const [assetStatusFilter, setAssetStatusFilter] = useState<'active' | 'archived' | 'all'>('active');
+  const [assetModal, setAssetModal] = useState<'add' | 'edit' | null>(null);
+  const [editingAsset, setEditingAsset] = useState<InvestmentAsset | null>(null);
+  const [assetConnected, setAssetConnected] = useState(false);
+  const [assetLoading, setAssetLoading] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState<InvestmentAsset | null>(null);
+
+
   const [holdings, setHoldings] = useState<Holding[]>([
     { id: 'h1', asset: 'Orascom Construction', symbol: 'ORAS', type: 'Stock', portfolio: 'Wealth', platform: 'Thndr', quantity: 120, avgCost: 133.33, price: 160, currency: 'EGP' },
     { id: 'h2', asset: 'EFG Holding', symbol: 'EFID', type: 'Stock', portfolio: 'Wealth', platform: 'Thndr', quantity: 400, avgCost: 20, price: 24.5, currency: 'EGP' },
@@ -346,6 +380,71 @@ function InvestmentsPreview() {
     };
 
     loadPlatforms();
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const storageKey = 'financy-investment-assets';
+
+    const loadLocal = () => {
+      try {
+        const stored = window.localStorage.getItem(storageKey);
+        if (!stored) return demoAssets;
+        const parsed = JSON.parse(stored);
+        return Array.isArray(parsed) && parsed.length ? parsed as InvestmentAsset[] : demoAssets;
+      } catch {
+        return demoAssets;
+      }
+    };
+
+    async function loadAssets() {
+      const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      if (!key || key === 'missing-publishable-key') {
+        if (mounted) {
+          setAssetRows(loadLocal());
+          setAssetConnected(false);
+        }
+        return;
+      }
+
+      setAssetLoading(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('No authenticated user');
+        const { data, error } = await supabase
+          .from('investment_assets')
+          .select('id,name,symbol,asset_type,currency_code,isin,exchange,sector,notes,status')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true });
+        if (error) throw error;
+
+        if (mounted) {
+          setAssetRows((data ?? []).map((row) => ({
+            id: row.id,
+            name: row.name,
+            symbol: row.symbol || '',
+            type: String(row.asset_type || 'other').replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
+            currency: row.currency_code || 'EGP',
+            isin: row.isin || '',
+            exchange: row.exchange || '',
+            sector: row.sector || '',
+            notes: row.notes || '',
+            status: row.status === 'archived' ? 'Archived' : 'Active',
+          })));
+          setAssetConnected(true);
+        }
+      } catch {
+        if (mounted) {
+          setAssetRows(loadLocal());
+          setAssetConnected(false);
+        }
+      } finally {
+        if (mounted) setAssetLoading(false);
+      }
+    }
+
+    loadAssets();
     return () => { mounted = false; };
   }, []);
 
@@ -958,7 +1057,213 @@ function InvestmentsPreview() {
         );
       })()}
 
-      {tab === 'assets' && <Card className="p-5"><div className="flex items-center justify-between"><div><h3 className="font-display text-xl font-extrabold">Assets</h3><p className="mt-1 text-xs text-muted-foreground">Stocks, funds and other investment assets.</p></div><button type="button" onClick={() => setShowAdd(true)} className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-bold"><Plus className="size-3.5" /> Add holding</button></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b border-border text-left text-[10px] uppercase tracking-[0.08em] text-muted-foreground"><th className="px-3 py-3">Asset</th><th className="px-3 py-3">Type</th><th className="px-3 py-3">Qty</th><th className="px-3 py-3 text-right">Avg cost</th><th className="px-3 py-3 text-right">Price</th><th className="px-3 py-3 text-right">Value</th></tr></thead><tbody>{holdings.map((row) => <tr key={row.id} className="border-b border-border last:border-0"><td className="px-3 py-3"><p className="font-bold">{row.symbol || row.asset}</p><p className="text-[11px] text-muted-foreground">{row.asset}</p></td><td className="px-3 py-3 text-xs">{row.type}</td><td className="px-3 py-3">{row.quantity}</td><td className="px-3 py-3 text-right">{money(row.avgCost,row.currency)}</td><td className="px-3 py-3 text-right">{money(row.price,row.currency)}</td><td className="px-3 py-3 text-right font-bold">{money(row.quantity*row.price,row.currency)}</td></tr>)}</tbody></table></div></Card>}
+      {tab === 'assets' && (() => {
+        const visibleAssets = assetRows.filter((row) => {
+          const statusMatch = assetStatusFilter === 'all' || row.status.toLowerCase() === assetStatusFilter;
+          const typeMatch = assetTypeFilter === 'all' || row.type === assetTypeFilter;
+          const searchMatch = !assetSearch || [row.name, row.symbol, row.type, row.currency, row.isin, row.exchange, row.sector].join(' ').toLowerCase().includes(assetSearch.toLowerCase());
+          return statusMatch && typeMatch && searchMatch;
+        });
+
+        const assetTypes = Array.from(new Set(assetRows.map((row) => row.type))).sort();
+
+        const openAssetModal = (asset?: InvestmentAsset) => {
+          setEditingAsset(asset ?? null);
+          setAssetModal(asset ? 'edit' : 'add');
+        };
+
+        const saveAsset = async (event: React.FormEvent<HTMLFormElement>) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          const name = String(form.get('name') || '').trim();
+          if (!name) return;
+
+          const next: InvestmentAsset = {
+            id: editingAsset?.id ?? 'asset-' + Date.now(),
+            name,
+            symbol: String(form.get('symbol') || '').trim(),
+            type: String(form.get('type') || 'Other'),
+            currency: String(form.get('currency') || 'EGP'),
+            isin: String(form.get('isin') || '').trim(),
+            exchange: String(form.get('exchange') || '').trim(),
+            sector: String(form.get('sector') || '').trim(),
+            notes: String(form.get('notes') || '').trim(),
+            status: String(form.get('status') || 'Active') as InvestmentAsset['status'],
+          };
+
+          const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+          if (!key || key === 'missing-publishable-key' || !assetConnected) {
+            setAssetRows((rows) => {
+              const updated = editingAsset ? rows.map((row) => row.id === editingAsset.id ? next : row) : [next, ...rows];
+              try { window.localStorage.setItem('financy-investment-assets', JSON.stringify(updated)); } catch {}
+              return updated;
+            });
+            setAssetModal(null);
+            setEditingAsset(null);
+            return;
+          }
+
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error('No authenticated user');
+
+            const payload = {
+              user_id: user.id,
+              name: next.name,
+              symbol: next.symbol || null,
+              asset_type: next.type.toLowerCase().replace(/\s+/g, '_') === 'fund' ? 'mutual_fund' : next.type.toLowerCase().replace(/\s+/g, '_'),
+              currency_code: next.currency,
+              isin: next.isin || null,
+              exchange: next.exchange || null,
+              sector: next.sector || null,
+              notes: next.notes || null,
+              status: next.status.toLowerCase(),
+            };
+
+            if (editingAsset) {
+              const { data, error } = await supabase.from('investment_assets').update(payload).eq('id', editingAsset.id).eq('user_id', user.id).select('id,name,symbol,asset_type,currency_code,isin,exchange,sector,notes,status').single();
+              if (error) throw error;
+              const saved = {
+                id: data.id, name: data.name, symbol: data.symbol || '', type: String(data.asset_type).replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()), currency: data.currency_code || 'EGP', isin: data.isin || '', exchange: data.exchange || '', sector: data.sector || '', notes: data.notes || '', status: data.status === 'archived' ? 'Archived' : 'Active'
+              } as InvestmentAsset;
+              setAssetRows((rows) => rows.map((row) => row.id === editingAsset.id ? saved : row));
+            } else {
+              const { data, error } = await supabase.from('investment_assets').insert(payload).select('id,name,symbol,asset_type,currency_code,isin,exchange,sector,notes,status').single();
+              if (error) throw error;
+              const saved = {
+                id: data.id, name: data.name, symbol: data.symbol || '', type: String(data.asset_type).replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()), currency: data.currency_code || 'EGP', isin: data.isin || '', exchange: data.exchange || '', sector: data.sector || '', notes: data.notes || '', status: data.status === 'archived' ? 'Archived' : 'Active'
+              } as InvestmentAsset;
+              setAssetRows((rows) => [saved, ...rows]);
+            }
+
+            setAssetConnected(true);
+            setAssetModal(null);
+            setEditingAsset(null);
+          } catch {
+            setAssetRows((rows) => {
+              const updated = editingAsset ? rows.map((row) => row.id === editingAsset.id ? next : row) : [next, ...rows];
+              try { window.localStorage.setItem('financy-investment-assets', JSON.stringify(updated)); } catch {}
+              return updated;
+            });
+            setAssetConnected(false);
+            setAssetModal(null);
+            setEditingAsset(null);
+          }
+        };
+
+        return (
+          <Card className="p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="font-display text-xl font-extrabold">Assets</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Your investment asset master list, separate from individual holdings.</p>
+                <p className="mt-2 text-[10px] font-semibold text-muted-foreground">{assetLoading ? 'Loading assets...' : assetConnected ? 'Saved to your Financy data' : 'Saved on this device until Supabase is connected'}</p>
+              </div>
+              <button type="button" onClick={() => openAssetModal()} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground"><Plus className="size-3.5" /> Add asset</button>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-[1.5fr_1fr_1fr]">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <input value={assetSearch} onChange={(event) => setAssetSearch(event.target.value)} placeholder="Search asset, symbol, ISIN..." className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary" />
+              </div>
+              <select value={assetTypeFilter} onChange={(event) => setAssetTypeFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs font-semibold outline-none focus:border-primary">
+                <option value="all">All asset types</option>
+                {assetTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+              </select>
+              <select value={assetStatusFilter} onChange={(event) => setAssetStatusFilter(event.target.value as typeof assetStatusFilter)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs font-semibold outline-none focus:border-primary">
+                <option value="active">Active</option><option value="archived">Archived</option><option value="all">All status</option>
+              </select>
+            </div>
+
+            <div className="mt-5 overflow-x-auto rounded-2xl border border-border">
+              <table className="w-full min-w-[1100px] text-sm">
+                <thead><tr className="border-b border-border bg-muted/30 text-left text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                  <th className="px-3 py-3">Asset</th><th className="px-3 py-3">Type</th><th className="px-3 py-3">Currency</th><th className="px-3 py-3">Exchange</th><th className="px-3 py-3">Sector</th><th className="px-3 py-3 text-right">Holdings</th><th className="px-3 py-3 text-right">Current value</th><th className="px-3 py-3">Status</th><th className="px-3 py-3"></th>
+                </tr></thead>
+                <tbody>
+                  {visibleAssets.map((row) => {
+                    const assetHoldings = holdings.filter((holding) => (holding.symbol && row.symbol && holding.symbol === row.symbol) || holding.asset === row.name);
+                    const value = assetHoldings.reduce((sum, holding) => sum + holding.quantity * holding.price, 0);
+                    return (
+                      <tr key={row.id} className="border-b border-border last:border-0 hover:bg-muted/20">
+                        <td className="px-3 py-3"><button type="button" onClick={() => setSelectedAsset(row)} className="text-left"><p className="font-bold">{row.symbol || row.name}</p><p className="text-[11px] text-muted-foreground">{row.name}</p></button></td>
+                        <td className="px-3 py-3 text-xs font-semibold">{row.type}</td>
+                        <td className="px-3 py-3 text-xs">{row.currency}</td>
+                        <td className="px-3 py-3 text-xs">{row.exchange || '—'}</td>
+                        <td className="px-3 py-3 text-xs">{row.sector || '—'}</td>
+                        <td className="px-3 py-3 text-right text-xs">{assetHoldings.length}</td>
+                        <td className="px-3 py-3 text-right text-xs font-extrabold">{money(value, row.currency)}</td>
+                        <td className="px-3 py-3"><span className={'rounded-full px-2 py-1 text-[10px] font-bold ' + (row.status === 'Active' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground')}>{row.status}</span></td>
+                        <td className="px-3 py-3 text-right"><button type="button" onClick={() => openAssetModal(row)} className="grid size-8 place-items-center rounded-lg border border-border"><MoreHorizontal className="size-4" /></button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {visibleAssets.length === 0 && <div className="mt-5 rounded-2xl border border-dashed border-border p-8 text-center text-xs text-muted-foreground">No assets found.</div>}
+
+            {selectedAsset && (() => {
+              const assetHoldings = holdings.filter((holding) => (holding.symbol && selectedAsset.symbol && holding.symbol === selectedAsset.symbol) || holding.asset === selectedAsset.name);
+              const value = assetHoldings.reduce((sum, holding) => sum + holding.quantity * holding.price, 0);
+              const investedValue = assetHoldings.reduce((sum, holding) => sum + holding.quantity * holding.avgCost, 0);
+              const gain = value - investedValue;
+              const pct = investedValue ? (gain / investedValue) * 100 : 0;
+              return (
+                <div className="fixed inset-0 z-[70] flex items-end justify-center bg-foreground/30 p-3 backdrop-blur-sm sm:items-center sm:p-6">
+                  <div className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-[28px] border border-border bg-card shadow-2xl">
+                    <div className="sticky top-0 z-20 border-b border-border bg-card px-5 py-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Asset details</p><h3 className="mt-1 font-display text-2xl font-extrabold">{selectedAsset.symbol || selectedAsset.name}</h3><p className="mt-1 text-sm text-muted-foreground">{selectedAsset.name} · {selectedAsset.type} · {selectedAsset.currency}</p></div>
+                        <button type="button" onClick={() => setSelectedAsset(null)} className="grid size-9 place-items-center rounded-xl border border-border"><X className="size-4" /></button>
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <Card className="p-3"><p className="text-[10px] text-muted-foreground">Current value</p><p className="mt-1 font-extrabold">{money(value, selectedAsset.currency)}</p></Card>
+                        <Card className="p-3"><p className="text-[10px] text-muted-foreground">Invested</p><p className="mt-1 font-extrabold">{money(investedValue, selectedAsset.currency)}</p></Card>
+                        <Card className="p-3"><p className="text-[10px] text-muted-foreground">Change</p><p className={'mt-1 font-extrabold ' + (gain >= 0 ? 'text-primary' : 'text-destructive')}>{gain >= 0 ? '+' : ''}{money(gain, selectedAsset.currency)}</p></Card>
+                        <Card className="p-3"><p className="text-[10px] text-muted-foreground">Return</p><p className={'mt-1 font-extrabold ' + (pct >= 0 ? 'text-primary' : 'text-destructive')}>{pct >= 0 ? '+' : ''}{pct.toFixed(2)}%</p></Card>
+                      </div>
+                    </div>
+                    <div className="p-5">
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <div><p className="text-[10px] text-muted-foreground">ISIN</p><p className="mt-1 text-xs font-semibold">{selectedAsset.isin || '—'}</p></div>
+                        <div><p className="text-[10px] text-muted-foreground">Exchange</p><p className="mt-1 text-xs font-semibold">{selectedAsset.exchange || '—'}</p></div>
+                        <div><p className="text-[10px] text-muted-foreground">Sector</p><p className="mt-1 text-xs font-semibold">{selectedAsset.sector || '—'}</p></div>
+                        <div><p className="text-[10px] text-muted-foreground">Status</p><p className="mt-1 text-xs font-semibold">{selectedAsset.status}</p></div>
+                      </div>
+                      <div className="mt-5 overflow-x-auto rounded-2xl border border-border">
+                        <table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b border-border bg-muted/30 text-left text-[10px] uppercase tracking-[0.08em] text-muted-foreground"><th className="px-3 py-3">Portfolio</th><th className="px-3 py-3">Platform</th><th className="px-3 py-3 text-right">Quantity</th><th className="px-3 py-3 text-right">Avg cost</th><th className="px-3 py-3 text-right">Price</th><th className="px-3 py-3 text-right">Value</th></tr></thead><tbody>{assetHoldings.map((holding) => <tr key={holding.id} className="border-b border-border last:border-0"><td className="px-3 py-3 text-xs font-semibold">{holding.portfolio}</td><td className="px-3 py-3 text-xs font-semibold">{holding.platform}</td><td className="px-3 py-3 text-right text-xs">{holding.quantity.toLocaleString()}</td><td className="px-3 py-3 text-right text-xs">{money(holding.avgCost, holding.currency)}</td><td className="px-3 py-3 text-right text-xs">{money(holding.price, holding.currency)}</td><td className="px-3 py-3 text-right text-xs font-extrabold">{money(holding.quantity * holding.price, holding.currency)}</td></tr>)}</tbody></table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {assetModal && (
+              <div className="fixed inset-0 z-[60] grid place-items-center bg-black/45 p-4">
+                <div className="w-full max-w-2xl rounded-3xl border border-border bg-background p-6 shadow-2xl">
+                  <div className="flex items-center justify-between"><div><h3 className="font-display text-2xl font-extrabold">{editingAsset ? 'Edit asset' : 'New asset'}</h3><p className="mt-1 text-xs text-muted-foreground">Asset master data is separate from portfolio holdings.</p></div><button type="button" onClick={() => { setAssetModal(null); setEditingAsset(null); }} className="grid size-9 place-items-center rounded-xl border border-border"><X className="size-4" /></button></div>
+                  <form onSubmit={saveAsset} className="mt-5 grid gap-4 sm:grid-cols-2">
+                    <label className="text-xs font-bold sm:col-span-2">Asset name<input name="name" required defaultValue={editingAsset?.name ?? ''} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" placeholder="e.g. Orascom Construction" /></label>
+                    <label className="text-xs font-bold">Symbol<input name="symbol" defaultValue={editingAsset?.symbol ?? ''} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" placeholder="e.g. ORAS" /></label>
+                    <label className="text-xs font-bold">Type<select name="type" defaultValue={editingAsset?.type ?? 'Stock'} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"><option>Stock</option><option>Fund</option><option>ETF</option><option>Bond</option><option>Gold</option><option>Certificate</option><option>Crypto</option><option>Cash</option><option>Other</option></select></label>
+                    <label className="text-xs font-bold">Currency<select name="currency" defaultValue={editingAsset?.currency ?? 'EGP'} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal"><option>EGP</option><option>USD</option><option>SAR</option><option>AED</option></select></label>
+                    <label className="text-xs font-bold">ISIN<input name="isin" defaultValue={editingAsset?.isin ?? ''} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" /></label>
+                    <label className="text-xs font-bold">Exchange<input name="exchange" defaultValue={editingAsset?.exchange ?? ''} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" placeholder="e.g. EGX" /></label>
+                    <label className="text-xs font-bold">Sector<input name="sector" defaultValue={editingAsset?.sector ?? ''} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-normal" /></label>
+                    <label className="text-xs font-bold sm:col-span-2">Notes<textarea name="notes" defaultValue={editingAsset?.notes ?? ''} rows={3} className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-3 text-sm font-normal" /></label>
+                    <label className="text-xs font-bold">Status<select name="status" defaultValue={editingAsset?.status ?? 'Active'} className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-normal"><option>Active</option><option>Archived</option></select></label>
+                    <div className="flex items-end justify-end gap-2"><button type="button" onClick={() => { setAssetModal(null); setEditingAsset(null); }} className="h-11 rounded-xl border border-border px-4 text-sm font-bold">Cancel</button><button type="submit" className="h-11 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground">Save asset</button></div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </Card>
+        );
+      })()}
 
       {tab === 'activity' && <Card className="p-5"><div><h3 className="font-display text-xl font-extrabold">Investment activity</h3><p className="mt-1 text-xs text-muted-foreground">Buy, sell and dividend transactions.</p></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[700px] text-sm"><thead><tr className="border-b border-border text-left text-[10px] uppercase tracking-[0.08em] text-muted-foreground"><th className="px-3 py-3">Date</th><th className="px-3 py-3">Action</th><th className="px-3 py-3">Asset</th><th className="px-3 py-3">Portfolio</th><th className="px-3 py-3">Platform</th><th className="px-3 py-3 text-right">Amount</th></tr></thead><tbody>{activity.map((row) => <tr key={row.date+row.asset} className="border-b border-border last:border-0"><td className="px-3 py-3 text-xs">{row.date}</td><td className="px-3 py-3 font-bold">{row.action}</td><td className="px-3 py-3 font-bold">{row.asset}</td><td className="px-3 py-3 text-xs">{row.portfolio}</td><td className="px-3 py-3 text-xs">{row.platform}</td><td className="px-3 py-3 text-right font-bold">{money(row.amount)}</td></tr>)}</tbody></table></div></Card>}
 
