@@ -626,22 +626,49 @@ function InvestmentsPreview() {
         ))}
       </div>
 
-      {tab === 'overview' && (
-        <div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
-          <Card className="p-5">
-            <div className="flex items-center justify-between"><div><h3 className="font-display text-xl font-extrabold">Holdings</h3><p className="mt-1 text-xs text-muted-foreground">Current value and unrealized performance.</p></div><button type="button" onClick={() => setTab('assets')} className="text-xs font-bold text-primary">View all</button></div>
-            <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead><tr className="border-b border-border text-left text-[10px] uppercase tracking-[0.08em] text-muted-foreground"><th className="px-3 py-3">Asset</th><th className="px-3 py-3">Portfolio</th><th className="px-3 py-3">Platform</th><th className="px-3 py-3 text-right">Value</th><th className="px-3 py-3 text-right">Return</th></tr></thead><tbody>
-              {holdings.map((row) => { const value = row.quantity * row.price; const gain = value - row.quantity * row.avgCost; const pct = row.avgCost ? (gain / (row.quantity * row.avgCost)) * 100 : 0; return <tr key={row.id} className="border-b border-border last:border-0"><td className="px-3 py-3"><p className="font-bold">{row.symbol || row.asset}</p><p className="text-[11px] text-muted-foreground">{row.asset}</p></td><td className="px-3 py-3 text-xs">{row.portfolio}</td><td className="px-3 py-3 text-xs">{row.platform}</td><td className="px-3 py-3 text-right font-bold">{money(value,row.currency)}</td><td className="px-3 py-3 text-right font-bold text-primary">+{pct.toFixed(1)}%</td></tr>; })}
-            </tbody></table></div>
-          </Card>
+      {tab === 'overview' && (() => {
+        const [holdingPortfolioFilter] = [portfolioRows];
+        const filteredHoldings = (() => {
+          const searchValue = (window.__financyHoldingSearch ?? '');
+          return holdings;
+        })();
+
+        return (
           <div className="space-y-5">
-            <Card className="p-5"><h3 className="font-display text-xl font-extrabold">Allocation</h3><p className="mt-1 text-xs text-muted-foreground">By investment type.</p><div className="mt-5 space-y-4">
-              {[['Stocks', holdings.filter((row) => row.type === 'Stock').reduce((sum,row) => sum + row.quantity * row.price,0)],['Funds', holdings.filter((row) => row.type === 'Fund').reduce((sum,row) => sum + row.quantity * row.price,0)],['Other',0]].map(([label,value]) => { const pct = currentValue ? (Number(value)/currentValue)*100 : 0; return <div key={label as string}><div className="flex justify-between text-xs font-bold"><span>{label}</span><span>{pct.toFixed(1)}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{width:pct+'%'}} /></div><p className="mt-1 text-[11px] text-muted-foreground">{money(Number(value))}</p></div>; })}
-            </div></Card>
-            <Card className="p-5"><div className="flex items-center justify-between"><h3 className="font-display text-xl font-extrabold">Recent activity</h3><button type="button" onClick={() => setTab('activity')} className="text-xs font-bold text-primary">View all</button></div><div className="mt-3 divide-y divide-border">{activity.map((row) => <div key={row.date + row.asset} className="flex items-center justify-between gap-3 py-3"><div><p className="text-sm font-bold">{row.action} {row.asset}</p><p className="text-[11px] text-muted-foreground">{row.date} · {row.platform}</p></div><span className="text-sm font-bold">{money(row.amount)}</span></div>)}</div></Card>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Card className="p-4 sm:p-5"><p className="text-xs text-muted-foreground">Current value</p><p className="mt-2 text-xl font-extrabold sm:text-2xl">{money(currentValue)}</p><p className="mt-1 text-[11px] text-muted-foreground">All current holdings</p></Card>
+              <Card className="p-4 sm:p-5"><p className="text-xs text-muted-foreground">Invested</p><p className="mt-2 text-xl font-extrabold sm:text-2xl">{money(invested)}</p><p className="mt-1 text-[11px] text-muted-foreground">Total cost basis</p></Card>
+              <Card className="p-4 sm:p-5"><p className="text-xs text-muted-foreground">Unrealized gain</p><p className="mt-2 text-xl font-extrabold text-primary sm:text-2xl">{money(unrealized)}</p><p className="mt-1 text-[11px] text-primary">+{returnPct.toFixed(1)}%</p></Card>
+              <Card className="p-4 sm:p-5"><p className="text-xs text-muted-foreground">Holdings</p><p className="mt-2 text-xl font-extrabold sm:text-2xl">{holdings.length}</p><p className="mt-1 text-[11px] text-muted-foreground">{platformRows.length} platforms · {portfolioRows.filter((row) => row.status === 'Active').length} active portfolios</p></Card>
+            </div>
+
+            <div className="rounded-3xl border border-border bg-card p-4 shadow-sm sm:p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <h3 className="font-display text-xl font-extrabold sm:text-2xl">Holdings</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">Excel-style view of every current holding with a dynamic total row.</p>
+                </div>
+                <button type="button" onClick={() => setTab('assets')} className="self-start text-xs font-bold text-primary lg:self-auto">Manage assets</button>
+              </div>
+
+              <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={(window.__financyHoldingSearch ?? '')}
+                    onChange={(event) => {
+                      window.__financyHoldingSearch = event.target.value;
+                      event.currentTarget.dispatchEvent(new Event('financy-holdings-filter'));
+                    }}
+                    placeholder="Search asset, symbol..."
+                    className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })}
 
       {tab === 'portfolios' && (() => {
         const visiblePortfolios = portfolioRows.filter((row) => {
