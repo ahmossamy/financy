@@ -638,51 +638,26 @@ function InvestmentsPreview() {
         const currencyOptions = Array.from(new Set(holdings.map((row) => row.currency))).sort();
 
         const filteredHoldings = holdings.filter((row) => {
-          const searchValue = holdingSearch.trim().toLowerCase();
-          const searchMatch = !searchValue || [row.asset, row.symbol, row.type, row.portfolio, row.platform, row.currency].join(' ').toLowerCase().includes(searchValue);
-          const portfolioMatch = holdingPortfolioFilter === 'all' || row.portfolio === holdingPortfolioFilter;
-          const platformMatch = holdingPlatformFilter === 'all' || row.platform === holdingPlatformFilter;
-          const assetTypeMatch = holdingAssetTypeFilter === 'all' || row.type === holdingAssetTypeFilter;
-          const currencyMatch = holdingCurrencyFilter === 'all' || row.currency === holdingCurrencyFilter;
-          return searchMatch && portfolioMatch && platformMatch && assetTypeMatch && currencyMatch;
+          const search = holdingSearch.trim().toLowerCase();
+          return (
+            (!search || [row.asset, row.symbol, row.type, row.portfolio, row.platform, row.currency].join(' ').toLowerCase().includes(search)) &&
+            (holdingPortfolioFilter === 'all' || row.portfolio === holdingPortfolioFilter) &&
+            (holdingPlatformFilter === 'all' || row.platform === holdingPlatformFilter) &&
+            (holdingAssetTypeFilter === 'all' || row.type === holdingAssetTypeFilter) &&
+            (holdingCurrencyFilter === 'all' || row.currency === holdingCurrencyFilter)
+          );
         });
 
-        const filteredInvested = filteredHoldings.reduce((sum, row) => sum + row.quantity * row.avgCost, 0);
-        const filteredCurrentValue = filteredHoldings.reduce((sum, row) => sum + row.quantity * row.price, 0);
-        const filteredGain = filteredCurrentValue - filteredInvested;
-        const filteredReturn = filteredInvested ? (filteredGain / filteredInvested) * 100 : 0;
-        const currenciesInSelection = Array.from(new Set(filteredHoldings.map((row) => row.currency)));
-        const singleCurrency = currenciesInSelection.length === 1 ? currenciesInSelection[0] : 'EGP';
-        const hasMixedCurrencies = currenciesInSelection.length > 1;
+        const investedTotal = filteredHoldings.reduce((sum, row) => sum + row.quantity * row.avgCost, 0);
+        const currentTotal = filteredHoldings.reduce((sum, row) => sum + row.quantity * row.price, 0);
+        const gainTotal = currentTotal - investedTotal;
+        const returnTotal = investedTotal ? (gainTotal / investedTotal) * 100 : 0;
+        const unitsTotal = filteredHoldings.reduce((sum, row) => sum + row.quantity, 0);
+        const currencies = Array.from(new Set(filteredHoldings.map((row) => row.currency)));
+        const mixedCurrency = currencies.length > 1;
+        const currency = currencies[0] || 'EGP';
 
-        const totalUnits = filteredHoldings.reduce((sum, row) => sum + row.quantity, 0);
-        const weightedAvgCost = totalUnits ? filteredInvested / totalUnits : 0;
-        const weightedCurrentPrice = totalUnits ? filteredCurrentValue / totalUnits : 0;
-
-        const typeSummary = Array.from(new Set(filteredHoldings.map((row) => row.type)))
-          .map((type) => {
-            const value = filteredHoldings.filter((row) => row.type === type).reduce((sum, row) => sum + row.quantity * row.price, 0);
-            return { type, value, pct: filteredCurrentValue ? (value / filteredCurrentValue) * 100 : 0 };
-          })
-          .sort((a, b) => b.value - a.value);
-
-        const topHolding = [...filteredHoldings].sort((a, b) => (b.quantity * b.price) - (a.quantity * a.price))[0];
-        const bestPerformer = [...filteredHoldings].sort((a, b) => {
-          const aInvested = a.quantity * a.avgCost;
-          const bInvested = b.quantity * b.avgCost;
-          const aPct = aInvested ? ((a.quantity * a.price - aInvested) / aInvested) * 100 : 0;
-          const bPct = bInvested ? ((b.quantity * b.price - bInvested) / bInvested) * 100 : 0;
-          return bPct - aPct;
-        })[0];
-        const worstPerformer = [...filteredHoldings].sort((a, b) => {
-          const aInvested = a.quantity * a.avgCost;
-          const bInvested = b.quantity * b.avgCost;
-          const aPct = aInvested ? ((a.quantity * a.price - aInvested) / aInvested) * 100 : 0;
-          const bPct = bInvested ? ((b.quantity * b.price - bInvested) / bInvested) * 100 : 0;
-          return aPct - bPct;
-        })[0];
-
-        const resetHoldingFilters = () => {
+        const clearFilters = () => {
           setHoldingSearch('');
           setHoldingPortfolioFilter('all');
           setHoldingPlatformFilter('all');
@@ -690,47 +665,43 @@ function InvestmentsPreview() {
           setHoldingCurrencyFilter('all');
         };
 
-        const totalLabel = hasMixedCurrencies ? 'Multiple currencies' : money(filteredCurrentValue, singleCurrency);
-        const investedLabel = hasMixedCurrencies ? 'Multiple currencies' : money(filteredInvested, singleCurrency);
-        const gainLabel = hasMixedCurrencies ? 'Multiple currencies' : money(filteredGain, singleCurrency);
-
         return (
           <div className="space-y-5">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Card className="p-4 sm:p-5">
                 <p className="text-xs text-muted-foreground">Current value</p>
-                <p className="mt-2 text-xl font-extrabold sm:text-2xl">{totalLabel}</p>
-                <p className="mt-1 text-[11px] text-muted-foreground">{filteredHoldings.length} filtered holdings</p>
+                <p className="mt-2 text-xl font-extrabold sm:text-2xl">{mixedCurrency ? 'Multiple currencies' : money(currentTotal, currency)}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">{filteredHoldings.length} visible holdings</p>
               </Card>
               <Card className="p-4 sm:p-5">
                 <p className="text-xs text-muted-foreground">Invested</p>
-                <p className="mt-2 text-xl font-extrabold sm:text-2xl">{investedLabel}</p>
-                <p className="mt-1 text-[11px] text-muted-foreground">Cost basis of filtered rows</p>
+                <p className="mt-2 text-xl font-extrabold sm:text-2xl">{mixedCurrency ? 'Multiple currencies' : money(investedTotal, currency)}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Filtered cost basis</p>
               </Card>
               <Card className="p-4 sm:p-5">
                 <p className="text-xs text-muted-foreground">Profit / Loss</p>
-                <p className={'mt-2 text-xl font-extrabold sm:text-2xl ' + (filteredGain >= 0 ? 'text-primary' : 'text-destructive')}>{gainLabel}</p>
-                <p className={'mt-1 text-[11px] font-semibold ' + (filteredGain >= 0 ? 'text-primary' : 'text-destructive')}>{hasMixedCurrencies ? 'Filter to one currency for totals' : (filteredGain >= 0 ? '+' : '') + filteredReturn.toFixed(2) + '%'}</p>
+                <p className={'mt-2 text-xl font-extrabold sm:text-2xl ' + (gainTotal >= 0 ? 'text-primary' : 'text-destructive')}>{mixedCurrency ? 'Multiple currencies' : money(gainTotal, currency)}</p>
+                <p className={'mt-1 text-[11px] font-semibold ' + (gainTotal >= 0 ? 'text-primary' : 'text-destructive')}>{mixedCurrency ? 'Filter to one currency' : (gainTotal >= 0 ? '+' : '') + returnTotal.toFixed(2) + '%'}</p>
               </Card>
               <Card className="p-4 sm:p-5">
                 <p className="text-xs text-muted-foreground">Holdings</p>
                 <p className="mt-2 text-xl font-extrabold sm:text-2xl">{filteredHoldings.length}</p>
-                <p className="mt-1 text-[11px] text-muted-foreground">{new Set(filteredHoldings.map((row) => row.platform)).size} platforms · {new Set(filteredHoldings.map((row) => row.portfolio)).size} portfolios</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">{unitsTotal.toLocaleString(undefined, { maximumFractionDigits: 4 })} total units</p>
               </Card>
             </div>
 
             <Card className="overflow-hidden">
               <div className="border-b border-border p-4 sm:p-5">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h3 className="font-display text-xl font-extrabold sm:text-2xl">Holdings</h3>
-                    <p className="mt-1 text-xs text-muted-foreground">Excel-style holdings register. Totals and percentages recalculate from the filtered rows.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">All current assets. Totals update from the visible rows after filtering.</p>
                   </div>
-                  <button type="button" onClick={resetHoldingFilters} className="self-start rounded-xl border border-border px-3 py-2 text-xs font-bold hover:bg-muted">Clear filters</button>
+                  <button type="button" onClick={clearFilters} className="rounded-xl border border-border px-3 py-2 text-xs font-bold hover:bg-muted">Clear filters</button>
                 </div>
 
-                <div className="mt-5 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
-                  <div className="relative xl:col-span-1">
+                <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+                  <div className="relative">
                     <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                     <input value={holdingSearch} onChange={(event) => setHoldingSearch(event.target.value)} placeholder="Search asset, symbol..." className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary" />
                   </div>
@@ -778,7 +749,7 @@ function InvestmentsPreview() {
                       const rowValue = row.quantity * row.price;
                       const rowGain = rowValue - rowInvested;
                       const rowReturn = rowInvested ? (rowGain / rowInvested) * 100 : 0;
-                      const rowAllocation = filteredCurrentValue ? (rowValue / filteredCurrentValue) * 100 : 0;
+                      const rowAllocation = currentTotal ? (rowValue / currentTotal) * 100 : 0;
                       return (
                         <tr key={row.id} className="border-b border-border last:border-0 hover:bg-muted/20">
                           <td className="px-3 py-3">
@@ -793,9 +764,7 @@ function InvestmentsPreview() {
                           <td className="px-3 py-3 text-right text-xs font-semibold">{money(row.price, row.currency)}</td>
                           <td className="px-3 py-3 text-right text-xs">{money(rowInvested, row.currency)}</td>
                           <td className="px-3 py-3 text-right text-xs font-extrabold">{money(rowValue, row.currency)}</td>
-                          <td className={'px-3 py-3 text-right text-xs font-bold ' + (rowGain >= 0 ? 'text-primary' : 'text-destructive')}>
-                            {rowGain >= 0 ? '+' : ''}{money(rowGain, row.currency)}
-                          </td>
+                          <td className={'px-3 py-3 text-right text-xs font-bold ' + (rowGain >= 0 ? 'text-primary' : 'text-destructive')}>{rowGain >= 0 ? '+' : ''}{money(rowGain, row.currency)}</td>
                           <td className={'px-3 py-3 text-right text-xs font-bold ' + (rowReturn >= 0 ? 'text-primary' : 'text-destructive')}>{rowReturn >= 0 ? '+' : ''}{rowReturn.toFixed(2)}%</td>
                           <td className="px-3 py-3 text-right text-xs font-extrabold">{rowAllocation.toFixed(2)}%</td>
                           <td className="px-3 py-3 text-xs">{row.currency}</td>
@@ -809,89 +778,21 @@ function InvestmentsPreview() {
                       <td className="px-3 py-4 text-xs text-muted-foreground">—</td>
                       <td className="px-3 py-4 text-xs text-muted-foreground">—</td>
                       <td className="px-3 py-4 text-xs text-muted-foreground">—</td>
-                      <td className="px-3 py-4 text-right text-xs">{totalUnits.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
-                      <td className="px-3 py-4 text-right text-xs">{hasMixedCurrencies ? '—' : money(weightedAvgCost, singleCurrency)}</td>
-                      <td className="px-3 py-4 text-right text-xs">{hasMixedCurrencies ? '—' : money(weightedCurrentPrice, singleCurrency)}</td>
-                      <td className="px-3 py-4 text-right text-xs">{hasMixedCurrencies ? '—' : investedLabel}</td>
-                      <td className="px-3 py-4 text-right text-xs">{hasMixedCurrencies ? '—' : totalLabel}</td>
-                      <td className={'px-3 py-4 text-right text-xs ' + (filteredGain >= 0 ? 'text-primary' : 'text-destructive')}>{hasMixedCurrencies ? '—' : (filteredGain >= 0 ? '+' : '') + gainLabel}</td>
-                      <td className={'px-3 py-4 text-right text-xs ' + (filteredReturn >= 0 ? 'text-primary' : 'text-destructive')}>{hasMixedCurrencies ? '—' : (filteredReturn >= 0 ? '+' : '') + filteredReturn.toFixed(2) + '%'}</td>
+                      <td className="px-3 py-4 text-right text-xs">{unitsTotal.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
+                      <td className="px-3 py-4 text-right text-xs">{mixedCurrency ? '—' : money(investedTotal / Math.max(unitsTotal, 1), currency)}</td>
+                      <td className="px-3 py-4 text-right text-xs">{mixedCurrency ? '—' : money(currentTotal / Math.max(unitsTotal, 1), currency)}</td>
+                      <td className="px-3 py-4 text-right text-xs">{mixedCurrency ? '—' : money(investedTotal, currency)}</td>
+                      <td className="px-3 py-4 text-right text-xs">{mixedCurrency ? '—' : money(currentTotal, currency)}</td>
+                      <td className={'px-3 py-4 text-right text-xs ' + (gainTotal >= 0 ? 'text-primary' : 'text-destructive')}>{mixedCurrency ? '—' : (gainTotal >= 0 ? '+' : '') + money(gainTotal, currency)}</td>
+                      <td className={'px-3 py-4 text-right text-xs ' + (returnTotal >= 0 ? 'text-primary' : 'text-destructive')}>{mixedCurrency ? '—' : (returnTotal >= 0 ? '+' : '') + returnTotal.toFixed(2) + '%'}</td>
                       <td className="px-3 py-4 text-right text-xs">100.00%</td>
-                      <td className="px-3 py-4 text-xs">{hasMixedCurrencies ? 'Mixed' : singleCurrency}</td>
+                      <td className="px-3 py-4 text-xs">{mixedCurrency ? 'Mixed' : currency}</td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
 
               {filteredHoldings.length === 0 && <div className="border-t border-border px-5 py-12 text-center text-xs text-muted-foreground">No holdings match the selected filters.</div>}
-            </Card>
-
-            <Card className="p-4 sm:p-5">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <h3 className="font-display text-xl font-extrabold">Quick Insights</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Fast portfolio information based on the same filtered holdings.</p>
-                </div>
-                <button type="button" onClick={() => setTab('activity')} className="self-start rounded-xl border border-border px-3 py-2 text-xs font-bold hover:bg-muted">View activity</button>
-              </div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="rounded-2xl border border-border bg-background p-4">
-                  <p className="text-[10px] uppercase tracking-[0.1em] text-muted-foreground">Largest holding</p>
-                  <p className="mt-2 text-sm font-extrabold">{topHolding?.symbol || topHolding?.asset || '—'}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{topHolding ? money(topHolding.quantity * topHolding.price, topHolding.currency) + ' · ' + (filteredCurrentValue ? ((topHolding.quantity * topHolding.price / filteredCurrentValue) * 100).toFixed(1) : '0.0') + '%' : 'No data'}</p>
-                </div>
-                <div className="rounded-2xl border border-border bg-background p-4">
-                  <p className="text-[10px] uppercase tracking-[0.1em] text-muted-foreground">Highest return</p>
-                  <p className="mt-2 text-sm font-extrabold">{bestPerformer?.symbol || bestPerformer?.asset || '—'}</p>
-                  <p className="mt-1 text-xs text-primary">{bestPerformer ? '+' + ((((bestPerformer.quantity * bestPerformer.price) - (bestPerformer.quantity * bestPerformer.avgCost)) / Math.max(bestPerformer.quantity * bestPerformer.avgCost, 1)) * 100).toFixed(2) + '%' : 'No data'}</p>
-                </div>
-                <div className="rounded-2xl border border-border bg-background p-4">
-                  <p className="text-[10px] uppercase tracking-[0.1em] text-muted-foreground">Lowest return</p>
-                  <p className="mt-2 text-sm font-extrabold">{worstPerformer?.symbol || worstPerformer?.asset || '—'}</p>
-                  <p className={'mt-1 ' + (worstPerformer && ((worstPerformer.quantity * worstPerformer.price) - (worstPerformer.quantity * worstPerformer.avgCost)) < 0 ? 'text-destructive' : 'text-muted-foreground')}>{worstPerformer ? (((worstPerformer.quantity * worstPerformer.price - worstPerformer.quantity * worstPerformer.avgCost) / Math.max(worstPerformer.quantity * worstPerformer.avgCost, 1)) * 100).toFixed(2) + '%' : 'No data'}</p>
-                </div>
-                <div className="rounded-2xl border border-border bg-background p-4">
-                  <p className="text-[10px] uppercase tracking-[0.1em] text-muted-foreground">Total current value</p>
-                  <p className="mt-2 text-sm font-extrabold">{totalLabel}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{filteredHoldings.length} holdings</p>
-                </div>
-                <div className="rounded-2xl border border-border bg-background p-4">
-                  <p className="text-[10px] uppercase tracking-[0.1em] text-muted-foreground">Total invested</p>
-                  <p className="mt-2 text-sm font-extrabold">{investedLabel}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Calculated from filtered cost basis</p>
-                </div>
-                <div className="rounded-2xl border border-border bg-background p-4">
-                  <p className="text-[10px] uppercase tracking-[0.1em] text-muted-foreground">Total gain</p>
-                  <p className={'mt-2 text-sm font-extrabold ' + (filteredGain >= 0 ? 'text-primary' : 'text-destructive')}>{gainLabel}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{hasMixedCurrencies ? 'Filter to one currency' : (filteredGain >= 0 ? '+' : '') + filteredReturn.toFixed(2) + '% return'}</p>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_.8fr]">
-                <div className="rounded-2xl border border-border bg-background p-4">
-                  <p className="text-xs font-bold">Allocation by asset type</p>
-                  <div className="mt-4 space-y-3">
-                    {typeSummary.length ? typeSummary.map((item) => (
-                      <div key={item.type}>
-                        <div className="flex items-center justify-between text-xs font-semibold"><span>{item.type}</span><span>{item.pct.toFixed(2)}%</span></div>
-                        <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: Math.min(item.pct, 100) + '%' }} /></div>
-                        <p className="mt-1 text-[11px] text-muted-foreground">{hasMixedCurrencies ? 'Mixed currency' : money(item.value, singleCurrency)}</p>
-                      </div>
-                    )) : <p className="text-xs text-muted-foreground">No data.</p>}
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-border bg-background p-4">
-                  <p className="text-xs font-bold">Selected view</p>
-                  <div className="mt-4 space-y-3 text-xs">
-                    <div className="flex justify-between gap-3"><span className="text-muted-foreground">Portfolio</span><span className="font-semibold">{holdingPortfolioFilter === 'all' ? 'All portfolios' : holdingPortfolioFilter}</span></div>
-                    <div className="flex justify-between gap-3"><span className="text-muted-foreground">Platform</span><span className="font-semibold">{holdingPlatformFilter === 'all' ? 'All platforms' : holdingPlatformFilter}</span></div>
-                    <div className="flex justify-between gap-3"><span className="text-muted-foreground">Asset type</span><span className="font-semibold">{holdingAssetTypeFilter === 'all' ? 'All types' : holdingAssetTypeFilter}</span></div>
-                    <div className="flex justify-between gap-3"><span className="text-muted-foreground">Currency</span><span className="font-semibold">{holdingCurrencyFilter === 'all' ? 'All currencies' : holdingCurrencyFilter}</span></div>
-                    <div className="flex justify-between gap-3"><span className="text-muted-foreground">Units</span><span className="font-semibold">{totalUnits.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span></div>
-                  </div>
-                </div>
-              </div>
             </Card>
           </div>
         );
